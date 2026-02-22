@@ -78,7 +78,7 @@ public:
         throw Exception("Object is not copy constructible");
     }
 
-    bool is_owned() const override { return traits::is_unique_ptr_v<Holder>; }
+    bool is_owned() const override { return traits::is_unique_ptr_v<Holder> || traits::is_shared_ptr_v<Holder>; }
 
 private:
     ElementType* get_raw_ptr() const {
