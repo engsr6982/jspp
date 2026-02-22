@@ -57,9 +57,6 @@ public:
     V8KIT_DISABLE_COPY(InstancePayload);
 
     explicit InstancePayload() = delete;
-
-    explicit InstancePayload(std::unique_ptr<NativeInstance>&& holder) : holder_(std::move(holder)) {}
-
     explicit InstancePayload(
         std::unique_ptr<NativeInstance>&& holder,
         ClassMeta const*                  define,
@@ -72,12 +69,6 @@ public:
       constructFromJs_(constructFromJs) {}
 
     ~InstancePayload() = default;
-
-    template <typename... Args>
-        requires std::constructible_from<InstancePayload, Args...>
-    static inline std::unique_ptr<InstancePayload> make(Args&&... args) {
-        return std::make_unique<InstancePayload>(std::forward<Args>(args)...);
-    }
 };
 
 
