@@ -1,6 +1,6 @@
 #pragma once
-#include "Adapter.h"
 #include "ReturnValuePolicy.h"
+#include "TypeConverter.h"
 #include "traits/FunctionTraits.h"
 #include "v8kit/binding/traits/TypeTraits.h"
 #include "v8kit/core/Concepts.h"

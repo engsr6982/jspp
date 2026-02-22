@@ -28,6 +28,7 @@ enum class ReturnValuePolicy : uint8_t {
     /**
      * @brief 引用现有对象，但不取得其所有权。对象的生命周期管理及不再使用时的内存释放由 C++ 侧负责。
      * @note 警告：若 C++ 侧销毁了仍被 JS 引用和使用的对象，将导致未定义行为。
+     * @ntoe 当存在 TransientObjectScope 时，此策略创建的资源会在 TransientObjectScope 退出时销毁
      */
     kReference = 3,
 
@@ -45,6 +46,16 @@ enum class ReturnValuePolicy : uint8_t {
      * 引用，父对象就不会被垃圾回收。这是通过 property 等创建的属性获取器（property getter）的默认策略。
      */
     kReferenceInternal = 5,
+
+    /**
+     * 此策略和 kReference 大致相同，唯一的不同是此策略创建的资源不受 TransientObjectScope 的影响。
+     */
+    kReferencePersistent = 6,
+
+    /**
+     * 此策略和 kReferenceInternal 大致相同，唯一的不同是此策略创建的资源不受 TransientObjectScope 的影响。
+     */
+    kReferenceInternalPersistent = 7,
 };
 
 

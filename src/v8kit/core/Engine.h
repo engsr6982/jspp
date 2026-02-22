@@ -24,6 +24,11 @@ public:
 
     explicit Engine();
 
+    /**
+     * To create a Js engine, using sources from outside is isolate and context.
+     * This overload is commonly used in NodeJs Addons.
+     * When using isolate and contexts from outside (e.g. NodeJs), the Platform is not required.
+     */
     explicit Engine(v8::Isolate* isolate, v8::Local<v8::Context> context);
 
     [[nodiscard]] v8::Isolate* isolate() const;
@@ -50,8 +55,8 @@ public:
     [[nodiscard]] Local<Object> globalThis() const;
 
     /**
-     * Add a managed resource to the runtime.
-     * The managed resource will be destroyed when the runtime is destroyed.
+     * Add a managed resource to the engine.
+     * The managed resource will be destroyed when the engine is destroyed.
      * @param resource Resources that need to be managed
      * @param value The v8 object associated with this resource.
      * @param deleter The deleter function to be called when the resource is destroyed.
@@ -73,7 +78,7 @@ public:
 
     [[nodiscard]] InstancePayload* getInstancePayload(Local<Object> const& obj) const;
 
-    [[nodiscard]] bool trySetReferenceInternal( Local<Object> const& parentObj, Local<Object> const& subObj);
+    [[nodiscard]] bool trySetReferenceInternal(Local<Object> const& parentObj, Local<Object> const& subObj);
 
 private:
     void setToStringTag(v8::Local<v8::FunctionTemplate>& obj, std::string_view name, bool hasConstructor);

@@ -78,6 +78,8 @@ struct is_weak_ptr<std::weak_ptr<T>> : std::true_type {};
 template <typename T>
 inline constexpr bool is_weak_ptr_v = is_weak_ptr<std::remove_cvref_t<T>>::value;
 
+template <typename T>
+inline constexpr bool is_std_smart_pointer = is_unique_ptr_v<T> || is_shared_ptr_v<T> || is_weak_ptr_v<T>;
 
 template <typename T>
 struct pointee;

@@ -1,6 +1,8 @@
 #pragma once
 #include <typeindex>
 
+#include "Exception.h"
+
 namespace v8kit {
 
 struct ClassMeta;
@@ -17,6 +19,10 @@ public:
 
     [[nodiscard]] inline ClassMeta const* meta() const { return meta_; }
 
+    virtual bool is_expired() const = 0;
+
+    virtual void invalidate() = 0;
+
     virtual std::type_index type_id() const = 0;
 
     virtual bool is_const() const = 0;
@@ -31,6 +37,9 @@ public:
 
     template <typename T>
     T* unwrap() const {
+        if (is_expired()) {
+            throw Exception{"Accessing destroyed instance.", Exception::Type::ReferenceError};
+        }
         if (is_const() && !std::is_const_v<T>) {
             throw Exception("Cannot unwrap const instance to mutable pointer");
         }

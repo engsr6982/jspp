@@ -378,6 +378,29 @@ TEST_CASE_METHOD(BindingTestFixture, "overload and builder mode compatibility") 
 }
 
 
+// 瞬态资源回调安全
+class EventBase {
+    inline static int next = 0;
+    int               id   = next++;
+
+public:
+    EventBase() = default;
+
+    int getId() const { return id; }
+
+    static void listen(std::function<void(EventBase const&)> cb) {
+        EventBase eventBase{};
+        cb(eventBase);
+    }
+};
+auto EventBaseMeta = defClass<EventBase>("Counter")
+                         .ctor()
+                         .method("getId", &EventBase::getId)
+//                          // bind callback func
+                          // .func("listen", &EventBase::listen)
+                          .build();
+
+
 // TODO:
 // ### 4.1.2 普通类继承绑定
 // - 测试点：
@@ -439,7 +462,6 @@ TEST_CASE_METHOD(BindingTestFixture, "overload and builder mode compatibility") 
 //     - `take_ownership`：脚本 GC 后自动析构
 //     - `reference_internal`：宿主存活则有效
 // - 判定标准：所有权、生命周期、泄漏、有效性全部符合预期
-
 
 
 } // namespace ut

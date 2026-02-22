@@ -1,5 +1,6 @@
 #include "EngineScope.h"
 #include "Engine.h"
+#include "NativeInstance.h"
 
 #include <stdexcept>
 
@@ -52,6 +53,25 @@ void EngineScope::ensureEngine(Engine* engine) {
 
 
 ExitEngineScope::ExitEngineScope() : unlocker_(EngineScope::currentEngineChecked().isolate_) {}
+
+
+thread_local TransientObjectScope* TransientObjectScope::gCurrentScope_ = nullptr;
+
+TransientObjectScope::TransientObjectScope() : prev_(gCurrentScope_) { gCurrentScope_ = this; }
+TransientObjectScope::~TransientObjectScope() {
+    gCurrentScope_ = prev_;
+    for (auto instance : trackedInstances_) {
+        instance->invalidate();
+    }
+}
+void                  TransientObjectScope::track(NativeInstance* instance) { trackedInstances_.push_back(instance); }
+bool                  TransientObjectScope::isActive() { return gCurrentScope_ != nullptr; }
+TransientObjectScope* TransientObjectScope::current() { return gCurrentScope_; }
+TransientObjectScope& TransientObjectScope::currentChecked() {
+    auto scope = current();
+    if (!scope) throw std::logic_error("No TransientNativeScope is active");
+    return *scope;
+}
 
 namespace internal {
 

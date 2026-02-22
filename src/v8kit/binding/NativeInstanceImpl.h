@@ -40,6 +40,22 @@ public:
 
     std::type_index type_id() const override { return std::type_index(typeid(std::remove_cv_t<ElementType>)); }
 
+    bool is_expired() const override {
+        if constexpr (std::is_pointer_v<Holder>) {
+            return value_ == nullptr;
+        } else {
+            return !value_;
+        }
+    }
+
+    void invalidate() override {
+        if constexpr (traits::is_std_smart_pointer<Holder>) {
+            value_.reset();
+        } else {
+            value_ = nullptr;
+        }
+    }
+
     bool is_const() const override { return std::is_const_v<ElementType>; }
 
     void* cast(std::type_index target_type) const override {
@@ -209,8 +225,16 @@ createNativeInstance(T&& value, ReturnValuePolicy policy, traits::detail::Resolv
 
         case ReturnValuePolicy::kReference:
         case ReturnValuePolicy::kReferenceInternal:
-            // 引用持有裸指针 (takeOwnership = false)
-            return createImpl(rawPtr);
+        case ReturnValuePolicy::kReferencePersistent:
+        case ReturnValuePolicy::kReferenceInternalPersistent: {
+            auto inst = createImpl(rawPtr);
+
+            bool canTrack = policy == ReturnValuePolicy::kReference || policy == ReturnValuePolicy::kReferenceInternal;
+            if (canTrack && TransientObjectScope::isActive()) {
+                TransientObjectScope::currentChecked().track(inst.get());
+            }
+            return std::move(inst);
+        }
 
         default:
             [[unlikely]] throw Exception("Unknown return value policy");
