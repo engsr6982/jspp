@@ -495,6 +495,67 @@ TEST_CASE_METHOD(BindingTestFixture, "bind property") {
 }
 
 
+// 智能指针兼容测试
+class SmartPointerTest {
+public:
+    int id_{0};
+
+    static std::unique_ptr<SmartPointerTest> withUnique(int id) { return std::make_unique<SmartPointerTest>(id); }
+    static std::shared_ptr<SmartPointerTest> withShared() {
+        static std::shared_ptr<SmartPointerTest> shared = std::make_shared<SmartPointerTest>(0);
+        return shared;
+    }
+    static std::weak_ptr<SmartPointerTest> withWeak() { return withShared(); }
+
+    static void checkUnique(std::unique_ptr<SmartPointerTest> ptr, int reqId) {
+        REQUIRE(ptr != nullptr);
+        REQUIRE(ptr->id_ == reqId);
+    }
+    static void checkShared(std::shared_ptr<SmartPointerTest> ptr, int reqId) {
+        REQUIRE(ptr != nullptr);
+        REQUIRE(ptr->id_ == reqId);
+    }
+    static void checkWeak(std::weak_ptr<SmartPointerTest> ptr, int reqId) {
+        auto p = ptr.lock();
+        REQUIRE(p != nullptr);
+        REQUIRE(p->id_ == reqId);
+    }
+};
+
+auto SmartPointerTestMeta = defClass<SmartPointerTest>("SmartPtr")
+                                .ctor(nullptr)
+                                .prop("id", &SmartPointerTest::id_)
+                                .func("withUnique", &SmartPointerTest::withUnique)
+                                .func("withShared", &SmartPointerTest::withShared)
+                                .func("withWeak", &SmartPointerTest::withWeak)
+                                .func("checkUnique", &SmartPointerTest::checkUnique)
+                                .func("checkShared", &SmartPointerTest::checkShared)
+                                .func("checkWeak", &SmartPointerTest::checkWeak)
+                                .build();
+
+TEST_CASE_METHOD(BindingTestFixture, "smart pointer test") {
+    EngineScope scope{engine.get()};
+    engine->registerClass(SmartPointerTestMeta);
+
+    REQUIRE_NOTHROW(engine->eval(String::newString(R"(
+        let shared = SmartPtr.withShared();
+        shared.id = 123;
+        SmartPtr.checkShared(shared, 123);
+    )")));
+
+    REQUIRE_NOTHROW(engine->eval(String::newString(R"(
+        let weak = SmartPtr.withWeak();
+        weak.id = 8856;
+        SmartPtr.checkWeak(weak, 8856);
+    )")));
+
+    REQUIRE_NOTHROW(engine->eval(String::newString(R"(
+        let unique = SmartPtr.withUnique(1478520);
+        SmartPtr.checkUnique(unique, 1478520);
+    )")));
+}
+
+
 // TODO:
 // ### 4.1.2 普通类继承绑定
 // - 测试点：

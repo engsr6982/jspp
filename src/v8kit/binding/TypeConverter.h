@@ -386,9 +386,111 @@ struct TypeConverter<std::function<R(Args...)>> {
     static Fn toCpp(Local<Value> const& value) { return adapter::wrapScriptCallback<R, Args...>(value); }
 };
 
-// TODO: support smart pointer
-// template <typename T>
-// struct TypeConverter<std::shared_ptr<T>> {};
+
+template <typename T>
+struct TypeConverter<std::shared_ptr<T>> {
+    using Ptr = std::shared_ptr<T>;
+
+    template <typename U>
+    static Local<Value> toJs(U&& value, ReturnValuePolicy policy, Local<Value> parent) {
+        return detail::GenericTypeConverter<T>::template toJs<U>(std::forward<U>(value), policy, parent);
+    }
+
+    static Ptr toCpp(Local<Value> const& value) {
+        if (value.isNullOrUndefined() || !value.isObject()) {
+            return nullptr;
+        }
+
+        auto& engine  = EngineScope::currentEngineChecked();
+        auto  payload = engine.getInstancePayload(value.asObject());
+        if (payload == nullptr || !payload->getHolder()) {
+            // throw Exception("Argument is not a native instance");
+            return nullptr;
+        }
+
+        auto holder      = payload->getHolder();
+        auto shared_void = holder->get_shared_ptr();
+        if (!shared_void) {
+            throw Exception("Underlying C++ object is not managed by std::shared_ptr");
+        }
+
+        // 计算裸指针地址(多继承指针偏移)
+        void* casted_ptr = holder->cast(typeid(T));
+        if (!casted_ptr) {
+            throw Exception("Type mismatch or polymorphic cast failed");
+        }
+
+        return Ptr(shared_void, static_cast<T*>(casted_ptr));
+    }
+};
+
+template <typename T>
+struct TypeConverter<std::weak_ptr<T>> {
+
+    template <typename U>
+    static Local<Value> toJs(U&& value, ReturnValuePolicy policy, Local<Value> parent) {
+        auto shared = value.lock();
+        if (!shared) {
+            return Null::newNull(); // 对象已死，返回 null
+        }
+        // 委托给 shared_ptr 转换器，让 V8 持有一个强引用
+        return TypeConverter<std::shared_ptr<T>>::toJs(shared, policy, parent);
+    }
+
+    using Ptr = std::weak_ptr<T>;
+    static Ptr toCpp(Local<Value> const& value) {
+        // 提取出来的临时 shared_ptr 会隐式转换为 weak_ptr 并返回。
+        // 因为 V8 里的 NativeInstance 还在，所以底层的引用计数至少为 1，绝不会立刻失效。
+        return TypeConverter<std::shared_ptr<T>>::toCpp(value);
+    }
+};
+
+template <typename T>
+struct TypeConverter<std::unique_ptr<T>> {
+    using Ptr = std::unique_ptr<T>;
+
+    template <typename U>
+    static Local<Value> toJs(U&& value, ReturnValuePolicy policy, Local<Value> parent) {
+        return detail::GenericTypeConverter<T>::template toJs<U>(std::forward<U>(value), policy, parent);
+    }
+
+    // static Local<Value> toJs(T&& value, ReturnValuePolicy policy, Local<Value> parent) {
+    //     return detail::GenericTypeConverter<T>::template toJs<T>(std::move(value), policy, parent);
+    // }
+
+    static Ptr toCpp(Local<Value> const& value) {
+        if (value.isNullOrUndefined() || !value.isObject()) {
+            return nullptr;
+        }
+
+        auto& engine  = EngineScope::currentEngineChecked();
+        auto  payload = engine.getInstancePayload(value.asObject());
+        if (payload == nullptr || !payload->getHolder()) {
+            return nullptr;
+        }
+
+        auto holder = payload->getHolder();
+
+        // 解析多态指针地址
+        void* casted_ptr = holder->cast(typeid(T));
+        if (!casted_ptr) {
+            throw Exception("Type mismatch or polymorphic cast failed");
+        }
+
+        T* raw_ptr = static_cast<T*>(casted_ptr);
+
+        // 【核心逻辑】JS 无法安全交出 GC 对象的所有权。
+        // 为了满足 C++ 独占的需求，我们执行深拷贝 (Clone)。
+        if constexpr (std::is_copy_constructible_v<T>) {
+            return std::make_unique<T>(*raw_ptr);
+        } else {
+            throw Exception(
+                "Cannot convert JS object to std::unique_ptr<T>: "
+                "C++ class is not copy-constructible, and JS ownership cannot be stolen."
+            );
+        }
+    }
+};
 
 
 // free functions
@@ -556,7 +658,7 @@ FunctionCallback wrapFunction(Fn&& fn, ReturnValuePolicy policy) {
             return {}; // undefined
         } else {
             decltype(auto) ret = std::apply(f, ConvertArgsToTuple<Tuple>(args, std::make_index_sequence<Count>()));
-            return toJs(ret, policy, args.hasThiz() ? args.thiz() : Local<Value>{});
+            return toJs(std::forward<decltype(ret)>(ret), policy, args.hasThiz() ? args.thiz() : Local<Value>{});
         }
     };
 }
@@ -643,7 +745,7 @@ GetterCallback wrapGetter(Fn&& getter, ReturnValuePolicy policy) {
         static_assert(Trait::ArgsCount == 0, "Getter must not take arguments");
 
         decltype(auto) value = std::invoke(get);
-        return toJs(value, policy, {});
+        return toJs(std::forward<decltype(value)>(value), policy, {});
     };
 }
 template <typename Fn>
@@ -762,7 +864,7 @@ InstanceMethodCallback wrapInstanceMethod(Fn&& fn, ReturnValuePolicy policy) {
                 assert(args.hasThiz() && "this is required for Builder pattern");
                 return args.thiz();
             } else {
-                return toJs(ret, policy, args.hasThiz() ? args.thiz() : Local<Value>{});
+                return toJs(std::forward<decltype(ret)>(ret), policy, args.hasThiz() ? args.thiz() : Local<Value>{});
             }
         }
     };
@@ -827,7 +929,7 @@ InstanceGetterCallback wrapInstanceGetter(Fn&& fn, ReturnValuePolicy policy) {
         UnwrapC* inst = payload.unwrap<UnwrapC>();
 
         decltype(auto) value = (inst->*f)();
-        return toJs(value, policy, args.hasThiz() ? args.thiz() : Local<Value>{});
+        return toJs(std::forward<decltype(value)>(value), policy, args.hasThiz() ? args.thiz() : Local<Value>{});
     };
 }
 template <typename C, typename Fn>
@@ -857,7 +959,11 @@ wrapInstanceAccessor(Ty C::* member, ReturnValuePolicy policy) {
                                      policy](InstancePayload& payload, Arguments const& arguments) -> Local<Value> {
         auto           inst  = payload.unwrap<const C>();
         decltype(auto) value = inst->*member;
-        return toJs(value, policy, arguments.hasThiz() ? arguments.thiz() : Local<Value>{});
+        return toJs(
+            std::forward<decltype(value)>(value),
+            policy,
+            arguments.hasThiz() ? arguments.thiz() : Local<Value>{}
+        );
     };
     InstanceSetterCallback setter = nullptr;
     if constexpr (!std::is_const_v<std::remove_cvref_t<Ty>> && !forceReadonly) {
