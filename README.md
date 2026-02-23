@@ -1,6 +1,6 @@
 # v8kit 🚀
 
-**[English](#english)** | **[简体中文](#简体中文)**
+**[English](./README.md)** | **[简体中文](./README_ZH.md)**
 
 ---
 
