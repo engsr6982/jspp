@@ -29,29 +29,15 @@ private:
 
 
 public:
-    [[nodiscard]] inline NativeInstance* getHolder() { return holder_.get(); }
+    [[nodiscard]] inline NativeInstance& getHolder() { return *holder_; }
 
     [[nodiscard]] inline ClassMeta const* getDefine() const { return define_; }
 
     [[nodiscard]] bool isConstructFromJs() const { return constructFromJs_; }
 
-    /**
-     * @brief 释放管理的资源
-     * @note 适用于需要手动释放资源的场景，如数据库连接句柄等
-     * @note 主动释放资源后，v8 GC 并不会感知改资源的内存释放，直到对应 JS 实例释放后，对应内存才会回收
-     */
-    inline void finalize() {
-        if (holder_) {
-            holder_.reset();
-        }
-    }
-
     template <typename T>
     inline T* unwrap() const {
-        if (holder_) {
-            return holder_->unwrap<T>();
-        }
-        return nullptr;
+        return holder_->unwrap<T>();
     }
 
     V8KIT_DISABLE_COPY(InstancePayload);

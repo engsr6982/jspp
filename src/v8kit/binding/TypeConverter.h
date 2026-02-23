@@ -161,7 +161,7 @@ struct GenericTypeConverter {
         if (!payload) {
             throw Exception("Argument is not a native instance");
         }
-        auto ptr = payload->getHolder()->unwrap<T>();
+        auto ptr = payload->unwrap<T>();
         if (!ptr) throw Exception("Type mismatch or cast failed");
         return ptr;
     }
@@ -404,19 +404,18 @@ struct TypeConverter<std::shared_ptr<T>> {
 
         auto& engine  = EngineScope::currentEngineChecked();
         auto  payload = engine.getInstancePayload(value.asObject());
-        if (payload == nullptr || !payload->getHolder()) {
-            // throw Exception("Argument is not a native instance");
-            return nullptr;
+        if (payload == nullptr) {
+            throw Exception("Argument is not a native instance");
         }
 
-        auto holder      = payload->getHolder();
-        auto shared_void = holder->get_shared_ptr();
+        auto& holder      = payload->getHolder();
+        auto  shared_void = holder.get_shared_ptr();
         if (!shared_void) {
             throw Exception("Underlying C++ object is not managed by std::shared_ptr");
         }
 
         // 计算裸指针地址(多继承指针偏移)
-        void* casted_ptr = holder->cast(typeid(T));
+        void* casted_ptr = holder.cast(typeid(T));
         if (!casted_ptr) {
             throw Exception("Type mismatch or polymorphic cast failed");
         }
@@ -467,13 +466,13 @@ struct TypeConverter<std::unique_ptr<T, Deleter>> {
 
         auto& engine  = EngineScope::currentEngineChecked();
         auto  payload = engine.getInstancePayload(value.asObject());
-        if (payload == nullptr || !payload->getHolder()) {
-            return nullptr;
+        if (payload == nullptr) {
+            throw Exception("Argument is not a native instance");
         }
 
-        auto holder = payload->getHolder();
+        auto& holder = payload->getHolder();
 
-        if (holder->is_const() && !std::is_const_v<T>) {
+        if (holder.is_const() && !std::is_const_v<T>) {
             throw Exception(
                 "Cannot transfer ownership: The JS object is const, but C++ requires a mutable std::unique_ptr.",
                 Exception::Type::TypeError
@@ -481,12 +480,12 @@ struct TypeConverter<std::unique_ptr<T, Deleter>> {
         }
 
         // 解析多态指针地址
-        void* casted_ptr = holder->cast(typeid(T));
+        void* casted_ptr = holder.cast(typeid(T));
         if (!casted_ptr) {
             throw Exception("Type mismatch or polymorphic cast failed");
         }
 
-        void* released_raw = holder->release_ownership();
+        void* released_raw = holder.release_ownership();
         if (!released_raw) {
             throw Exception(
                 "Cannot transfer ownership to std::unique_ptr: "
