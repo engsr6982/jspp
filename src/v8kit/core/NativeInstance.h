@@ -35,6 +35,8 @@ public:
 
     virtual bool is_owned() const = 0;
 
+    virtual void* release_ownership() = 0;
+
     template <typename T>
     T* unwrap() const {
         if (is_expired()) {

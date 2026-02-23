@@ -553,6 +553,19 @@ TEST_CASE_METHOD(BindingTestFixture, "smart pointer test") {
         let unique = SmartPtr.withUnique(1478520);
         SmartPtr.checkUnique(unique, 1478520);
     )")));
+
+    // 确认 unique ptr 所有权正确
+    REQUIRE_THROWS_MATCHES(
+        engine->eval(String::newString(R"(
+            let unique_ptr = SmartPtr.withUnique(1478520);
+            SmartPtr.checkUnique(unique_ptr, 1478520); // release ownership
+            unique_ptr.id = 123; // uaf
+        )")),
+        Exception,
+        Catch::Matchers::Message(
+            "Uncaught ReferenceError: Accessing destroyed instance of type class ut::SmartPointerTest"
+        )
+    );
 }
 
 

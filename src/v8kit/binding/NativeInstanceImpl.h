@@ -58,6 +58,15 @@ public:
 
     bool is_const() const override { return std::is_const_v<ElementType>; }
 
+    void* release_ownership() override {
+        if constexpr (traits::is_unique_ptr_v<Holder>) {
+            // 显式丢弃 const，由外层 TypeConverter 负责安全性校验
+            return const_cast<void*>(static_cast<const void*>(value_.release()));
+        } else {
+            return nullptr; // shared_ptr 或 raw_ptr 不允许释放所有权
+        }
+    }
+
     void* cast(std::type_index target_type) const override {
         // 如果请求的类型恰好是智能指针持有的静态声明类型 (例如 Base2)
         // 直接返回底层的裸指针，因为智能指针知道自己准确的 Base2 地址，无需计算

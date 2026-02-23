@@ -12,6 +12,7 @@
 #include "v8kit/core/Value.h"
 
 #include <cassert>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <variant>
@@ -445,18 +446,19 @@ struct TypeConverter<std::weak_ptr<T>> {
     }
 };
 
-template <typename T>
-struct TypeConverter<std::unique_ptr<T>> {
+template <typename T, typename Deleter>
+struct TypeConverter<std::unique_ptr<T, Deleter>> {
     using Ptr = std::unique_ptr<T>;
+
+    static_assert(
+        std::is_same_v<Deleter, std::default_delete<T>>,
+        "[v8kit] FATAL: Only std::unique_ptr with std::default_delete is supported!"
+    );
 
     template <typename U>
     static Local<Value> toJs(U&& value, ReturnValuePolicy policy, Local<Value> parent) {
         return detail::GenericTypeConverter<T>::template toJs<U>(std::forward<U>(value), policy, parent);
     }
-
-    // static Local<Value> toJs(T&& value, ReturnValuePolicy policy, Local<Value> parent) {
-    //     return detail::GenericTypeConverter<T>::template toJs<T>(std::move(value), policy, parent);
-    // }
 
     static Ptr toCpp(Local<Value> const& value) {
         if (value.isNullOrUndefined() || !value.isObject()) {
@@ -471,24 +473,29 @@ struct TypeConverter<std::unique_ptr<T>> {
 
         auto holder = payload->getHolder();
 
+        if (holder->is_const() && !std::is_const_v<T>) {
+            throw Exception(
+                "Cannot transfer ownership: The JS object is const, but C++ requires a mutable std::unique_ptr.",
+                Exception::Type::TypeError
+            );
+        }
+
         // 解析多态指针地址
         void* casted_ptr = holder->cast(typeid(T));
         if (!casted_ptr) {
             throw Exception("Type mismatch or polymorphic cast failed");
         }
 
-        T* raw_ptr = static_cast<T*>(casted_ptr);
-
-        // 【核心逻辑】JS 无法安全交出 GC 对象的所有权。
-        // 为了满足 C++ 独占的需求，我们执行深拷贝 (Clone)。
-        if constexpr (std::is_copy_constructible_v<T>) {
-            return std::make_unique<T>(*raw_ptr);
-        } else {
+        void* released_raw = holder->release_ownership();
+        if (!released_raw) {
             throw Exception(
-                "Cannot convert JS object to std::unique_ptr<T>: "
-                "C++ class is not copy-constructible, and JS ownership cannot be stolen."
+                "Cannot transfer ownership to std::unique_ptr: "
+                "The JS object is not uniquely owned (it might be managed by shared_ptr or raw pointer)."
             );
         }
+
+        T* raw_ptr = static_cast<T*>(casted_ptr);
+        return Ptr(raw_ptr);
     }
 };
 
@@ -514,6 +521,10 @@ Local<Value> toJs(T&& val, ReturnValuePolicy policy, Local<Value> parent) {
 template <typename T>
 decltype(auto) toCpp(Local<Value> const& value) {
     using BareT = std::remove_cv_t<std::remove_reference_t<T>>; // T
+
+    if constexpr (traits::is_unique_ptr_v<BareT>) {
+        static_assert(std::is_same_v<T, BareT>, "Unique pointers must be passed by value to toCpp<T*>.");
+    }
 
     using Conv    = RawTypeConverter<T>;
     using ConvRet = decltype(Conv::toCpp(std::declval<Local<Value>>()));
