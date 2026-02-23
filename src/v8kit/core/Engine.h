@@ -9,9 +9,10 @@ namespace v8kit {
 
 struct ClassMeta; // forward declaration
 struct EnumMeta;
+class ITrackedHandle;
 namespace internal {
 class V8EscapeScope;
-}
+} // namespace internal
 
 class Engine {
 public:
@@ -89,9 +90,13 @@ private:
     void buildStaticMembers(v8::Local<v8::FunctionTemplate>& obj, ClassMeta const& meta);
     void buildInstanceMembers(v8::Local<v8::FunctionTemplate>& obj, ClassMeta const& meta);
 
+    void addTrackedHandle(ITrackedHandle* handle);
+    void removeTrackedHandle(ITrackedHandle* handle);
+
     friend EngineScope;
     friend ExitEngineScope;
     friend internal::V8EscapeScope;
+    friend class ITrackedHandle;
 
     template <typename>
     friend class Global;
@@ -116,6 +121,8 @@ private:
 
     bool       isDestroying_{false};
     bool const isExternalIsolate_{false};
+
+    ITrackedHandle* trackedHead_{nullptr};
 
     // This symbol is used to mark the construction of objects from C++ (with special logic).
     v8::Global<v8::Symbol> constructorSymbol_{};

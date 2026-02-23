@@ -37,6 +37,8 @@ struct ScriptEvalAssertContext {
         handler->handleExpr(Catch::Decomposer() <= condition);
         if (!condition) handler->handleMessage(Catch::ResultWas::ExplicitFailure, std::move(ctx));
     }
+
+    static void check(std::string const& a, std::string const& b) { REQUIRE(a == b); }
 };
 
 #define MOUNT_FUNC_NAME "assert"
@@ -49,6 +51,10 @@ struct BindingTestFixture {
         engine->globalThis().set(
             String::newString(MOUNT_FUNC_NAME),
             Function::newFunction(cpp_func(&ScriptEvalAssertContext::required))
+        );
+        engine->globalThis().set(
+            String::newString("check"),
+            Function::newFunction(cpp_func(&ScriptEvalAssertContext::check))
         );
     }
 };
@@ -380,26 +386,46 @@ TEST_CASE_METHOD(BindingTestFixture, "overload and builder mode compatibility") 
 
 // 瞬态资源回调安全
 class EventBase {
-    inline static int next = 0;
-    int               id   = next++;
+    int id{0};
 
 public:
-    EventBase() = default;
+    EventBase(int id) { this->id = id; }
 
     int getId() const { return id; }
 
     static void listen(std::function<void(EventBase const&)> cb) {
-        EventBase eventBase{};
+        EventBase eventBase{1234};
         cb(eventBase);
     }
 };
-auto EventBaseMeta = defClass<EventBase>("Counter")
-                         .ctor()
+auto EventBaseMeta = defClass<EventBase>("EventBase")
+                         .ctor(nullptr)
                          .method("getId", &EventBase::getId)
-//                          // bind callback func
-                          // .func("listen", &EventBase::listen)
-                          .build();
+                         // bind callback func
+                         .func("listen", &EventBase::listen)
+                         .build();
 
+TEST_CASE_METHOD(BindingTestFixture, "callback function with transient resource") {
+    EngineScope scope{engine.get()};
+    engine->registerClass(EventBaseMeta);
+
+    // 同步逃逸测试
+    REQUIRE_THROWS_MATCHES(
+        engine->eval(String::newString(R"(
+            let escaped;
+            EventBase.listen((e) => {
+                escaped = e; // 逃逸到外部作用域
+            });
+
+            // 此时 EventBase.listen 已经执行完毕
+            // TransientObjectScope 已经析构，escaped 应该被标记为失效
+            escaped.getId();
+            throw new Error("Should not reach here");
+        )")),
+        Exception,
+        Catch::Matchers::Message("Uncaught ReferenceError: Accessing destroyed instance of type class ut::EventBase")
+    );
+}
 
 // TODO:
 // ### 4.1.2 普通类继承绑定

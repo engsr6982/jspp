@@ -4,6 +4,7 @@
 #include "InstancePayload.h"
 #include "MetaInfo.h"
 #include "Reference.h"
+#include "TrackedHandle.h"
 #include "Value.h"
 #include "ValueHelper.h"
 
@@ -60,6 +61,13 @@ Engine::~Engine() {
 
     {
         EngineScope scope(this);
+
+        ITrackedHandle* current = trackedHead_;
+        while (current) {
+            current->onEngineDestroy();
+            current = current->next_;
+        }
+        trackedHead_ = nullptr;
 
         for (auto& [key, value] : managedResources_) {
             value.Reset();
@@ -290,7 +298,6 @@ bool Engine::trySetReferenceInternal(Local<Object> const& parentObj, Local<Objec
     v8Child->SetInternalField(static_cast<int>(InternalFieldSolt::ParentClassThisRef), v8Parent);
     return true;
 }
-
 
 
 void Engine::setToStringTag(v8::Local<v8::FunctionTemplate>& obj, std::string_view name, bool hasConstructor) {
@@ -567,6 +574,20 @@ void Engine::buildInstanceMembers(v8::Local<v8::FunctionTemplate>& obj, ClassMet
             v8::PropertyAttribute::DontDelete
         );
     }
+}
+
+void Engine::addTrackedHandle(ITrackedHandle* handle) {
+    if (isDestroying_) return;
+    handle->next_ = trackedHead_;
+    if (trackedHead_) trackedHead_->prev_ = handle;
+    trackedHead_ = handle;
+}
+void Engine::removeTrackedHandle(ITrackedHandle* handle) {
+    if (isDestroying_) return;
+    if (handle->prev_) handle->prev_->next_ = handle->next_;
+    if (handle->next_) handle->next_->prev_ = handle->prev_;
+    if (handle == trackedHead_) trackedHead_ = handle->next_;
+    handle->prev_ = handle->next_ = nullptr;
 }
 
 

@@ -104,6 +104,10 @@ void Global<T>::reset(Local<T> const& val) {
     handle_.Reset(current.isolate_, raw);
     engine_ = &current;
 }
+template <typename T>
+Engine* Global<T>::engine() const {
+    return engine_;
+}
 
 
 // Weak<T>
@@ -179,6 +183,10 @@ void Weak<T>::reset(Local<T> const& val) {
     handle_.Reset(current.isolate_, raw);
     engine_ = &current;
     markWeak();
+}
+template <typename T>
+Engine* Weak<T>::engine() const {
+    return engine_;
 }
 
 template <typename T>

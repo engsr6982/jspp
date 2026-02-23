@@ -289,10 +289,12 @@ public:
 
     void reset(Local<T> const& val);
 
+    [[nodiscard]] Engine* engine() const;
+
 private:
     using v8Global = v8::Global<internal::V8Type_v<T>>;
 
-    Engine*  engine_;
+    Engine*  engine_ = nullptr;
     v8Global handle_;
 
     friend Engine;
@@ -324,6 +326,8 @@ public:
     void reset();
 
     void reset(Local<T> const& val);
+
+    [[nodiscard]] Engine* engine() const;
 
 private:
     using v8Global = v8::Global<internal::V8Type_v<T>>;

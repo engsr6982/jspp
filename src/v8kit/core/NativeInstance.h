@@ -38,7 +38,10 @@ public:
     template <typename T>
     T* unwrap() const {
         if (is_expired()) {
-            throw Exception{"Accessing destroyed instance.", Exception::Type::ReferenceError};
+            throw Exception{
+                std::string{"Accessing destroyed instance of type "} + type_id().name(),
+                Exception::Type::ReferenceError
+            };
         }
         if (is_const() && !std::is_const_v<T>) {
             throw Exception("Cannot unwrap const instance to mutable pointer");

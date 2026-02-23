@@ -8,6 +8,7 @@
 #include "v8kit/core/InstancePayload.h"
 #include "v8kit/core/MetaInfo.h"
 #include "v8kit/core/Reference.h"
+#include "v8kit/core/TrackedHandle.h"
 #include "v8kit/core/Value.h"
 
 #include <cassert>
@@ -504,21 +505,32 @@ std::function<R(Args...)> wrapScriptCallback(Local<Value> const& value) {
     }
     auto& engine = EngineScope::currentEngineChecked();
 
-    Global global{value.asFunction()}; // keep alive
-    return [keep = std::move(global), engine = &engine](Args&&... args) -> R {
-        EngineScope          lock{engine};
-        TransientObjectScope enter{}; // 激活瞬时作用域，避免 JS 闭包逃逸 导致UAF
+    // 使用跟踪句柄，避免 C++ 侧拷贝 Lambda、长期持有 Global 导致 v8::Isolate 析构异常
+    auto safeKeep = TrackedGlobal<Function>::create(value.asFunction());
 
-        auto function = keep.get();
+    return [keep = std::move(safeKeep), engine = &engine](Args&&... args) -> R {
+        EngineScope lock{engine};
+
+        auto& global = keep->global();
+        if (global.isEmpty()) {
+            if constexpr (std::is_void_v<R>) {
+                return;
+            } else {
+                // 当跟踪句柄失效，代表引擎可能已销毁，这里抛运行时异常
+                throw std::runtime_error{"Engine already destroyed"};
+            }
+        }
+
+        TransientObjectScope enter{}; // 激活瞬时作用域，避免 JS 闭包逃逸 导致UAF
 
         std::array<Local<Value>, sizeof...(Args)> argv{
             toJs(std::forward<Args>(args), ReturnValuePolicy::kReference, Local<Value>{})...
         };
         if constexpr (std::is_void_v<R>) {
-            function.call({}, argv);
+            global.get().call({}, argv);
             return;
         } else {
-            return toCpp<R>(function.call({}, argv));
+            return toCpp<R>(global.get().call({}, argv));
         }
     };
 }
