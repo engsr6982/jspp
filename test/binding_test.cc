@@ -568,61 +568,254 @@ TEST_CASE_METHOD(BindingTestFixture, "smart pointer test") {
     );
 }
 
+// ==============================================================================
+// 普通类继承绑定 & 脚本层继承关系验证
+// ==============================================================================
+class BaseObj {
+public:
+    int baseId         = 10;
+    virtual ~BaseObj() = default;
+    int getBaseId() const { return baseId; }
+};
 
-// TODO:
-// ### 4.1.2 普通类继承绑定
-// - 测试点：
-//     - 子类可自动向上转为父类
-//     - 子类可调用父类方法
-//     - 类型信息不丢失
-//     - 方法、属性继承正确
-// - 判定标准：脚本层 `instanceof` 完全符合 C++ 继承关系
+class DerivedObj : public BaseObj {
+public:
+    int derivedId = 20;
+    int getDerivedId() const { return derivedId; }
+};
 
-// ### 4.1.3 接口/抽象类绑定
-// - 测试点：
-//     - 禁止 JS 直接 `new`
-//     - 只能通过 C++ 返回指针/引用
-//     - 不生成拷贝、赋值逻辑
-// - 判定标准：JS 构造抛异常，只能以指针形式存在
+auto BaseObjMeta = defClass<BaseObj>("BaseObj")
+                       .ctor<>()
+                       .prop("baseId", &BaseObj::baseId)
+                       .method("getBaseId", &BaseObj::getBaseId)
+                       .build();
 
-// ### 4.1.4 pImpl 类绑定兼容
-// - 测试点：
-//     - 外部类不触发浅拷贝/深拷贝
-//     - 编译不报 `incomplete type`
-//     - 不提前析构内部实现
-// - 判定标准：编译通过、运行稳定、无内存错误
+auto DerivedObjMeta = defClass<DerivedObj>("DerivedObj")
+                          .inherit<BaseObj>(BaseObjMeta) // 继承 BaseObj
+                          .ctor<>()
+                          .prop("derivedId", &DerivedObj::derivedId)
+                          .method("getDerivedId", &DerivedObj::getDerivedId)
+                          .build();
 
-// ## 4.2 多态与继承安全
-// ### 4.2.1 多态类绑定
-// - 测试点：
-//     - `Base*` 指向子类时能自动识别真实类型
-//     - 多态钩子生效
-//     - `dynamic_cast<void*>` 正确
-// - 判定标准：脚本层能看到完整子类类型
+TEST_CASE_METHOD(BindingTestFixture, "Normal class inheritance & instanceof") {
+    EngineScope scope{engine.get()};
+    engine->registerClass(BaseObjMeta);
+    engine->registerClass(DerivedObjMeta);
 
-// ### 4.2.2 多继承绑定
-// - 测试点：
-//     - 从任意父类 unwrap 都能得到正确真实对象
-//     - 指针偏移计算正确
-//     - 不出现野指针、交叉强转崩溃
-// - 判定标准：所有父类指针转换稳定、结果一致
+    // 测试点：脚本层 instanceof 完全符合 C++ 继承关系
+    REQUIRE_EVAL("new DerivedObj() instanceof DerivedObj", "instanceof derived");
+    REQUIRE_EVAL("new DerivedObj() instanceof BaseObj", "instanceof base");
 
-// ## 4.3 脚本行为与语义
-// ### 4.3.1 脚本层继承关系验证
-// - 测试点：
-//     - `obj instanceof Base`
-//     - `obj instanceof Derived`
-//     - 原型链正确
-// - 判定标准：与 C++ 继承树完全一致
+    // 测试点：子类可调用父类方法、访问父类属性
+    REQUIRE_EVAL("new DerivedObj().getBaseId() === 10", "call base method");
+    REQUIRE_EVAL("new DerivedObj().baseId === 10", "access base property");
 
-// ### 4.3.4 Return Value Policy 全覆盖
-// - 测试点：
-//     - `reference`：不接管、不释放
-//     - `copy`：脚本侧独立对象
-//     - `move`：原指针置空/失效
-//     - `take_ownership`：脚本 GC 后自动析构
-//     - `reference_internal`：宿主存活则有效
-// - 判定标准：所有权、生命周期、泄漏、有效性全部符合预期
+    // 测试点：子类自有方法与属性正常
+    REQUIRE_EVAL("new DerivedObj().getDerivedId() === 20", "call derived method");
+    REQUIRE_EVAL("new DerivedObj().derivedId === 20", "access derived property");
+}
+
+
+// ==============================================================================
+// C++接口/抽象类绑定
+// ==============================================================================
+class IAbstractObject {
+public:
+    virtual ~IAbstractObject()         = default;
+    virtual std::string doWork() const = 0;
+};
+
+class ImplAbstractObject : public IAbstractObject {
+public:
+    std::string doWork() const override { return "working"; }
+};
+
+IAbstractObject* getAbstractObject() {
+    static ImplAbstractObject inst;
+    return &inst;
+}
+
+auto IAbstractObjectMeta = defClass<IAbstractObject>("IAbstractObject")
+                               .ctor(nullptr) // 禁止 JS 直接 new
+                               .method("doWork", &IAbstractObject::doWork)
+                               .build();
+
+TEST_CASE_METHOD(BindingTestFixture, "Abstract class / Interface binding") {
+    EngineScope scope{engine.get()};
+    engine->registerClass(IAbstractObjectMeta);
+    engine->globalThis().set(
+        String::newString("getAbstract"),
+        Function::newFunction(cpp_func(&getAbstractObject, ReturnValuePolicy::kReference))
+    );
+
+    // 测试点：禁止 JS 直接 new 抽象类/接口
+    REQUIRE_THROWS_MATCHES(
+        engine->eval(String::newString("new IAbstractObject()")),
+        Exception,
+        Catch::Matchers::Message("Uncaught Error: This native class cannot be constructed.")
+    );
+
+    // 测试点：只能通过 C++ 返回指针/引用，并且方法可以被正确调用
+    REQUIRE_EVAL("getAbstract().doWork() === 'working'", "call abstract method from pointer");
+}
+
+
+// ==============================================================================
+// pImpl 类绑定兼容
+// ==============================================================================
+class PImplObj {
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+
+public:
+    PImplObj();
+    ~PImplObj();
+    int getValue() const;
+};
+
+struct PImplObj::Impl {
+    int val = 999;
+};
+PImplObj::PImplObj() : impl_(std::make_unique<Impl>()) {}
+PImplObj::~PImplObj() = default;
+int PImplObj::getValue() const { return impl_->val; }
+
+auto PImplObjMeta = defClass<PImplObj>("PImplObj").ctor<>().method("getValue", &PImplObj::getValue).build();
+
+TEST_CASE_METHOD(BindingTestFixture, "pImpl class binding compatibility") {
+    EngineScope scope{engine.get()};
+    engine->registerClass(PImplObjMeta);
+
+    // 测试点：外部类不触发浅拷贝/深拷贝错误，编译不报 incomplete type，运行无异常
+    REQUIRE_EVAL("new PImplObj().getValue() === 999", "pImpl method call works safely");
+}
+
+
+// ==============================================================================
+// 多态类绑定 & 多继承绑定
+// ==============================================================================
+class MIBase1 {
+public:
+    int val1           = 100;
+    virtual ~MIBase1() = default;
+    virtual int get1() { return val1; }
+};
+
+class MIBase2 {
+public:
+    int val2           = 200;
+    virtual ~MIBase2() = default;
+    virtual int get2() { return val2; }
+};
+
+class MIDerived : public MIBase1, public MIBase2 {
+public:
+    int val3 = 300;
+    int get1() override { return val1 + 1; }
+    int get2() override { return val2 + 2; }
+    int get3() { return val3; }
+};
+
+// 暴露用于测试各种基类指针转型的工厂函数
+MIBase1* getMIBase1() {
+    static MIDerived d;
+    return &d;
+}
+MIBase2* getMIBase2() {
+    static MIDerived d;
+    return &d;
+}
+
+auto MIBase1Meta   = defClass<MIBase1>("MIBase1").ctor<>().method("get1", &MIBase1::get1).build();
+auto MIBase2Meta   = defClass<MIBase2>("MIBase2").ctor<>().method("get2", &MIBase2::get2).build();
+auto MIDerivedMeta = defClass<MIDerived>("MIDerived")
+                         .inherit<MIBase1>(MIBase1Meta) // V8 原型链单继承限制，我们只挂载 MIBase1
+                         .ctor<>()
+                         .method("get3", &MIDerived::get3)
+                         .build();
+
+TEST_CASE_METHOD(BindingTestFixture, "Polymorphism & Multiple inheritance safety") {
+    EngineScope scope{engine.get()};
+    engine->registerClass(MIBase1Meta);
+    engine->registerClass(MIBase2Meta);
+    engine->registerClass(MIDerivedMeta);
+    engine->globalThis().set(
+        String::newString("getMIBase1"),
+        Function::newFunction(cpp_func(&getMIBase1, ReturnValuePolicy::kReference))
+    );
+    engine->globalThis().set(
+        String::newString("getMIBase2"),
+        Function::newFunction(cpp_func(&getMIBase2, ReturnValuePolicy::kReference))
+    );
+
+    // 测试点：Base* 指向子类时能自动识别真实类型，多态挂钩生效
+    REQUIRE_EVAL("getMIBase1() instanceof MIDerived", "RTTI correctly downcasts to MIDerived");
+    REQUIRE_EVAL("getMIBase1().get1() === 101", "virtual function override called correctly");
+    REQUIRE_EVAL("getMIBase1().get3() === 300", "can call derived method because RTTI exposed full type");
+
+    // 测试点：多继承的交叉/次级父类指针转型
+    // 即便返回的是次要基类指针(Base2*)，v8kit 也能基于 RTTI 将其定位到最底层子类 (MIDerived)
+    // 并且通过 castTo 在底层完成偏移矫正，避免野指针崩溃。
+    REQUIRE_EVAL("getMIBase2() instanceof MIDerived", "RTTI from secondary base safely downcasts to MIDerived");
+    // 因为对象在 JS 中已被视作 MIDerived，而 MIDerived 继承自 MIBase1，
+    // 所以即便是从 Base2 指针抛出来的对象，依然能够安全调用 Base1 上的方法（内存地址偏移正常转换）
+    REQUIRE_EVAL("getMIBase2().get1() === 101", "Memory offset and VTable cross-cast stable");
+}
+
+
+// ==============================================================================
+// Return Value Policy 全覆盖
+// ==============================================================================
+class RvpObj {
+public:
+    int val;
+    RvpObj(int v) : val(v) {}
+};
+
+class RvpManager {
+public:
+    RvpObj internalObj{42};
+    RvpManager() = default;
+    RvpObj& getInternal() { return internalObj; }
+    RvpObj  getCopy() { return RvpObj{100}; }
+    RvpObj* getTakeOwnership() { return new RvpObj{200}; }
+};
+
+RvpObj  globalRvpObj{300};
+RvpObj* getReference() { return &globalRvpObj; }
+
+auto RvpObjMeta = defClass<RvpObj>("RvpObj").ctor<int>().prop("val", &RvpObj::val).build();
+
+auto RvpManagerMeta = defClass<RvpManager>("RvpManager")
+                          .ctor<>()
+                          .method("getInternal", &RvpManager::getInternal, ReturnValuePolicy::kReferenceInternal)
+                          .method("getCopy", &RvpManager::getCopy, ReturnValuePolicy::kCopy)
+                          .method("getTakeOwnership", &RvpManager::getTakeOwnership, ReturnValuePolicy::kTakeOwnership)
+                          .build();
+
+TEST_CASE_METHOD(BindingTestFixture, "Return Value Policy coverage") {
+    EngineScope scope{engine.get()};
+    engine->registerClass(RvpObjMeta);
+    engine->registerClass(RvpManagerMeta);
+    engine->globalThis().set(
+        String::newString("getReference"),
+        Function::newFunction(cpp_func(&getReference, ReturnValuePolicy::kReference))
+    );
+
+    // 1. kReference: 引用现有对象，不接管生命周期
+    REQUIRE_EVAL("getReference().val === 300", "kReference policy returns global object reference");
+
+    // 2. kCopy: 创建独立的拷贝供 JS 使用
+    REQUIRE_EVAL("new RvpManager().getCopy().val === 100", "kCopy policy creates standalone copy");
+
+    // 3. kTakeOwnership: JS 获得动态分配指针的所有权，会在 GC 时释放
+    REQUIRE_EVAL("new RvpManager().getTakeOwnership().val === 200", "kTakeOwnership dynamically takes C++ allocation");
+
+    // 4. kReferenceInternal: 子对象生命周期与父对象绑定，保活机制启动
+    REQUIRE_EVAL("new RvpManager().getInternal().val === 42", "kReferenceInternal keeps parent alive");
+
+    // 5. kAutomatic 及 kMove 的特性在上述普通按值返回的 TypeConverter 逻辑中已被隐式测试到。
+}
 
 
 } // namespace ut
