@@ -427,6 +427,74 @@ TEST_CASE_METHOD(BindingTestFixture, "callback function with transient resource"
     );
 }
 
+
+class PropTest {
+public:
+    int         id_{0};
+    std::string name_;
+
+    PropTest(int id, std::string name) : id_{id}, name_{std::move(name)} {}
+
+    int getId() const { return id_; }
+
+    void setId(int id) { id_ = id; }
+
+    std::string getName() const { return name_; }
+
+    void setName(std::string name) { name_ = std::move(name); }
+};
+auto PropTestMeta = defClass<PropTest>("PropTest")
+                        .ctor<int, std::string>()
+                        // getter / setter
+                        .prop("id", &PropTest::getId, &PropTest::setId)
+                        .prop("name", &PropTest::getName, &PropTest::setName)
+                        // member pointer
+                        .prop("id_", &PropTest::id_)
+                        .prop("name_", &PropTest::name_)
+                        // always readonly
+                        .prop_readonly("readonly_id", &PropTest::getId)
+                        .prop_readonly("readonly_name", &PropTest::name_)
+                        .build();
+TEST_CASE_METHOD(BindingTestFixture, "bind property") {
+    EngineScope scope{engine.get()};
+
+    engine->registerClass(PropTestMeta);
+
+    // getter / setter
+    REQUIRE_EVAL("new PropTest(123, 'hello').id == 123", "constructor check");
+
+    REQUIRE_NOTHROW(engine->eval(String::newString(R"(
+        let obj = new PropTest(123, 'hello');
+        obj.id = 456;
+        if (obj.id != 456) throw new Error("id should be 456");
+    )")));
+    REQUIRE_NOTHROW(engine->eval(String::newString(R"(
+        let obj2 = new PropTest(123, 'hello');
+        obj2.name = 'world';
+        if (obj2.name != 'world') throw new Error("name should be 'world'");
+    )")));
+
+    // member pointer
+    REQUIRE_EVAL("new PropTest(123, 'hello').id_ == 123", "constructor check");
+    REQUIRE_NOTHROW(engine->eval(String::newString(R"(
+        let obj3 = new PropTest(123, 'hello');
+        obj3.id_ = 456;
+        if (obj3.id_ != 456) throw new Error("id_ should be 456");
+    )")));
+
+    // readonly
+    REQUIRE_THROWS_MATCHES(
+        engine->eval(String::newString(R"(
+            let obj4 = new PropTest(123, 'hello');
+            obj4.readonly_id = 456;
+            throw new Error("readonly_id should be readonly");
+        )")),
+        Exception,
+        Catch::Matchers::Message("Uncaught Error: readonly_id should be readonly")
+    );
+}
+
+
 // TODO:
 // ### 4.1.2 普通类继承绑定
 // - 测试点：

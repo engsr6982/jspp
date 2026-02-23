@@ -741,9 +741,6 @@ InstanceMethodCallback wrapInstanceMethod(Fn&& fn, ReturnValuePolicy policy) {
 
         using UnwrapC = std::conditional_t<Trait::isConst, const C, C>;
         UnwrapC* inst = payload.unwrap<UnwrapC>();
-        if (!inst) {
-            throw Exception{"Accessing destroyed instance", Exception::Type::ReferenceError};
-        }
 
         if constexpr (std::is_void_v<R>) {
             std::apply(
@@ -814,6 +811,64 @@ InstanceMethodCallback wrapOverloadMethodAndExtraPolicy(Overload&&... fn) {
     return _mergeMethodCallbacks(std::move(overloads));
 }
 
+
+template <typename C, typename Fn>
+InstanceGetterCallback wrapInstanceGetter(Fn&& fn, ReturnValuePolicy policy) {
+    if constexpr (traits::isInstanceGetterCallback_v<Fn>) {
+        return std::forward<Fn>(fn);
+    }
+    return [f = std::forward<Fn>(fn), policy](InstancePayload& payload, const Arguments& args) -> Local<Value> {
+        using Trait = traits::FunctionTraits<std::decay_t<Fn>>;
+        using R     = Trait::ReturnType;
+        static_assert(!std::is_void_v<R>, "Getter must return a value");
+        static_assert(Trait::ArgsCount == 0, "Getter must not take arguments");
+
+        using UnwrapC = std::conditional_t<Trait::isConst, const C, C>;
+        UnwrapC* inst = payload.unwrap<UnwrapC>();
+
+        decltype(auto) value = (inst->*f)();
+        return toJs(value, policy, args.hasThiz() ? args.thiz() : Local<Value>{});
+    };
+}
+template <typename C, typename Fn>
+InstanceSetterCallback wrapInstanceSetter(Fn&& fn) {
+    if constexpr (traits::isInstanceSetterCallback_v<Fn>) {
+        return std::forward<Fn>(fn);
+    }
+    return [f = std::forward<Fn>(fn)](InstancePayload& payload, const Arguments& args) {
+        using Trait = traits::FunctionTraits<std::decay_t<Fn>>;
+        using R     = Trait::ReturnType;
+        static_assert(std::is_void_v<R>, "Setter must not return a value");
+        static_assert(Trait::ArgsCount == 1, "Setter must take one argument");
+
+        using UnwrapC = std::conditional_t<Trait::isConst, const C, C>;
+        UnwrapC* inst = payload.unwrap<UnwrapC>();
+
+        using Args = Trait::ArgsTuple;
+        using Type = std::tuple_element_t<0, Args>;
+        (inst->*f)(toCpp<Type>(args[0]));
+    };
+}
+
+template <typename C, bool forceReadonly, typename Ty>
+std::pair<InstanceGetterCallback, InstanceSetterCallback>
+wrapInstanceAccessor(Ty C::* member, ReturnValuePolicy policy) {
+    InstanceGetterCallback getter = [member,
+                                     policy](InstancePayload& payload, Arguments const& arguments) -> Local<Value> {
+        auto           inst  = payload.unwrap<const C>();
+        decltype(auto) value = inst->*member;
+        return toJs(value, policy, arguments.hasThiz() ? arguments.thiz() : Local<Value>{});
+    };
+    InstanceSetterCallback setter = nullptr;
+    if constexpr (!std::is_const_v<std::remove_cvref_t<Ty>> && !forceReadonly) {
+        setter = [member](InstancePayload& payload, Arguments const& arguments) {
+            auto inst        = payload.unwrap<C>();
+            using value_type = std::remove_cvref_t<Ty>;
+            inst->*member    = toCpp<value_type>(arguments[0]);
+        };
+    }
+    return {std::move(getter), std::move(setter)};
+}
 
 template <typename C>
 InstanceMemberMeta::InstanceEqualsCallback bindInstanceEqualsImpl(std::false_type) {

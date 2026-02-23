@@ -246,8 +246,53 @@ public:
         return *this;
     }
 
-    // prop
-    // prop_readonly
+    auto& prop(std::string name, InstanceGetterCallback getter, InstanceSetterCallback setter)
+        requires isInstanceClass
+    {
+        instanceProperty_.emplace_back(std::move(name), std::move(getter), std::move(setter));
+        return *this;
+    }
+
+    template <typename G, typename S>
+    auto& prop(std::string name, G&& getter, S&& setter, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic)
+        requires isInstanceClass
+    {
+        auto r = adapter::wrapInstanceGetter<T>(std::forward<G>(getter), policy);
+        auto w = adapter::wrapInstanceSetter<T>(std::forward<S>(setter));
+        instanceProperty_.emplace_back(std::move(name), std::move(r), std::move(w));
+        return *this;
+    }
+
+    template <typename Member>
+    auto& prop(std::string name, Member member, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic)
+        requires(isInstanceClass && std::is_member_object_pointer_v<Member>)
+    {
+        auto rw = adapter::wrapInstanceAccessor<T, false>(std::forward<Member>(member), policy);
+        instanceProperty_.emplace_back(std::move(name), std::move(rw.first), std::move(rw.second));
+        return *this;
+    }
+
+    template <typename Member>
+    auto& prop_readonly(std::string name, Member member, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic)
+        requires(isInstanceClass && std::is_member_object_pointer_v<Member>)
+    {
+        auto rw = adapter::wrapInstanceAccessor<T, true>(std::forward<Member>(member), policy);
+        instanceProperty_.emplace_back(std::move(name), std::move(rw.first), std::move(rw.second));
+        return *this;
+    }
+
+    template <typename G>
+    auto& prop_readonly(std::string name, G&& getter, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic)
+        requires(isInstanceClass && std::is_member_function_pointer_v<G>)
+    {
+        if constexpr (traits::isInstanceGetterCallback_v<G>) {
+            return prop(std::move(name), std::forward<G>(getter), nullptr);
+        } else {
+            auto r = adapter::wrapInstanceGetter<T>(std::forward<G>(getter), policy);
+            instanceProperty_.emplace_back(std::move(name), std::move(r), nullptr);
+        }
+        return *this;
+    }
 
     [[nodiscard]] ClassMeta build() {
         ConstructorCallback constructorCallback = nullptr;
