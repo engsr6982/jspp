@@ -61,10 +61,6 @@ struct InstanceMemberMeta {
     std::vector<Method> const   methods_;
     size_t const                classSize_{0}; // sizeof(C) for instance class
 
-    // script helper
-    using InstanceEqualsCallback = bool (*)(void* lhs, void* rhs);
-    InstanceEqualsCallback const equals_{nullptr};
-
     // Type-erased dynamic copy/move constructors to preserve dynamic type
     using CopyCloneCtor = void* (*)(void const* src);
     using MoveCloneCtor = void* (*)(void* src);
@@ -72,19 +68,17 @@ struct InstanceMemberMeta {
     MoveCloneCtor const moveCloneCtor_{nullptr};
 
     explicit InstanceMemberMeta(
-        ConstructorCallback    constructor,
-        std::vector<Property>  property,
-        std::vector<Method>    functions,
-        size_t                 classSize,
-        InstanceEqualsCallback equals,
-        CopyCloneCtor          copyCloneCtor = nullptr,
-        MoveCloneCtor          moveCloneCtor = nullptr
+        ConstructorCallback   constructor,
+        std::vector<Property> property,
+        std::vector<Method>   functions,
+        size_t                classSize,
+        CopyCloneCtor         copyCloneCtor = nullptr,
+        MoveCloneCtor         moveCloneCtor = nullptr
     )
     : constructor_(std::move(constructor)),
       property_(std::move(property)),
       methods_(std::move(functions)),
       classSize_(classSize),
-      equals_(equals),
       copyCloneCtor_(copyCloneCtor),
       moveCloneCtor_(moveCloneCtor) {}
 };

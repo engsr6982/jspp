@@ -478,20 +478,6 @@ void Engine::buildInstanceMembers(v8::Local<v8::FunctionTemplate>& obj, ClassMet
     auto prototype = obj->PrototypeTemplate();
     auto signature = v8::Signature::New(isolate_);
 
-    // mount "$equals"
-    prototype->Set(
-        ValueHelper::unwrap(String::newString("$equals")),
-        v8::FunctionTemplate::New(
-            isolate_,
-            [](v8::FunctionCallbackInfo<v8::Value> const& info) {
-                info.GetReturnValue().SetFalse(); // TODO: impl equals
-            },
-            v8::External::New(isolate_, const_cast<InstanceMemberMeta*>(&instanceMeta)),
-            signature
-        ),
-        static_cast<PropertyAttribute>(v8::PropertyAttribute::DontDelete | v8::PropertyAttribute::DontEnum)
-    );
-
     for (auto& method : instanceMeta.methods_) {
         auto scriptMethodName = String::newString(method.name_);
 

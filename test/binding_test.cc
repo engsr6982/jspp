@@ -615,13 +615,6 @@ TEST_CASE_METHOD(BindingTestFixture, "smart pointer test") {
 //     - 原型链正确
 // - 判定标准：与 C++ 继承树完全一致
 
-// ### 4.3.2 实例等同比较 `$equals`
-// - 测试点：
-//     - 同一 C++ 实例 → `true`
-//     - 不同实例 → `false`
-//     - 不比较 JS 对象地址
-// - 判定标准：按底层原生指针比较
-
 // ### 4.3.4 Return Value Policy 全覆盖
 // - 测试点：
 //     - `reference`：不接管、不释放

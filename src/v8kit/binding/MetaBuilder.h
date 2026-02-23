@@ -323,11 +323,9 @@ public:
             }
         }
 
-        InstanceMemberMeta::InstanceEqualsCallback equalsCallback = nullptr;
-        InstanceMemberMeta::CopyCloneCtor          copyCloneCtor  = nullptr;
-        InstanceMemberMeta::MoveCloneCtor          moveCloneCtor  = nullptr;
+        InstanceMemberMeta::CopyCloneCtor copyCloneCtor = nullptr;
+        InstanceMemberMeta::MoveCloneCtor moveCloneCtor = nullptr;
         if constexpr (isInstanceClass) {
-            equalsCallback = adapter::bindInstanceEquals<T>();
             if constexpr (std::is_copy_constructible_v<T>) {
                 copyCloneCtor = [](const void* src) -> void* {
                     // 把 void* 强转回确切的子类 T*，调用 T 的拷贝构造
@@ -347,8 +345,7 @@ public:
                              std::move(instanceProperty_),
                              std::move(instanceFunctions_),
                              traits::size_of_v<T>,
-                             equalsCallback, copyCloneCtor,
-                             moveCloneCtor
+                             copyCloneCtor, moveCloneCtor
             },
             base_,
             std::type_index{typeid(T)},
