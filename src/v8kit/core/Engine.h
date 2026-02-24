@@ -71,6 +71,10 @@ public:
 
     Local<Object> registerEnum(EnumMeta const& meta);
 
+    /**
+     * Get metadata of the registered instance class
+     * @note If it is a static class, always return nullptr (e.g. defClass<void>)
+     */
     [[nodiscard]] ClassMeta const* getClassMeta(std::type_index typeId) const;
 
     Local<Object> newInstance(ClassMeta const& meta, std::unique_ptr<NativeInstance>&& instance);
@@ -131,7 +135,7 @@ private:
     std::unordered_map<std::string, ClassMeta const*>                      registeredClasses_;
     std::unordered_map<ClassMeta const*, v8::Global<v8::FunctionTemplate>> classConstructors_;
 
-    std::unordered_map<std::type_index, ClassMeta const*> typeMapping_;
+    std::unordered_map<std::type_index, ClassMeta const*> instanceClassMapping;
 
     std::unordered_map<std::string, EnumMeta const*> registeredEnums_;
 };

@@ -158,8 +158,8 @@ void Engine::addManagedResource(void* resource, v8::Local<v8::Value> value, std:
     managedResources_.emplace(managed.release(), std::move(weak));
 }
 ClassMeta const* Engine::getClassMeta(std::type_index typeId) const {
-    auto iter = typeMapping_.find(typeId);
-    if (iter == typeMapping_.end()) return nullptr;
+    auto iter = instanceClassMapping.find(typeId);
+    if (iter == instanceClassMapping.end()) return nullptr;
     return iter->second;
 }
 
@@ -204,9 +204,14 @@ Local<Function> Engine::registerClass(ClassMeta const& meta) {
     auto function = ctor->GetFunction(context_.Get(isolate_));
     Exception::rethrow(vtry);
 
+    if (meta.hasConstructor()) {
+        if (instanceClassMapping.contains(meta.typeId_)) {
+            throw std::logic_error("Type already registered: " + meta.name_);
+        }
+        instanceClassMapping.emplace(meta.typeId_, &meta);
+    }
     registeredClasses_.emplace(meta.name_, &meta);
     classConstructors_.emplace(&meta, v8::Global<v8::FunctionTemplate>{isolate_, ctor});
-    typeMapping_.emplace(meta.typeId_, &meta);
 
     auto myFunction = ValueHelper::wrap<Function>(function.ToLocalChecked());
     globalThis().set(scriptClassName, myFunction);
