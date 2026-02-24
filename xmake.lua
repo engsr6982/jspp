@@ -37,8 +37,6 @@ target("v8kit")
     set_languages("cxx20")
     set_symbols("debug")
 
-    set_toolchains("clang-cl")
-
     if has_config("test") then 
         set_kind("binary")
         add_packages("catch2")
