@@ -113,7 +113,7 @@ struct GenericTypeConverter {
     // T cannot be used because it is already determined by the enclosing template,
     // so T&& would be a pure rvalue reference rather than a forwarding reference.
     template <typename U>
-    static Local<Value> toJs(U&& value, ReturnValuePolicy policy, Local<Value> parent) {
+    static Local<Value> toJs(U&& value, ReturnValuePolicy policy, Local<Value> const& parent) {
         policy = handleAutomaticPolicy<U>(policy);
 
         using ElementType   = typename traits::detail::ElementTypeExtractor<U>::type;
@@ -176,22 +176,26 @@ struct TypeConverter : detail::GenericTypeConverter<T> {};
 template <typename T>
     requires concepts::WrapType<T>
 struct TypeConverter<Local<T>> {
-    static Local<Value> toJs(Local<T> const& value) { return value.asValue(); }
-    static Local<T>     toCpp(Local<Value> const& value) { return value.as<T>(); }
+    static Local<Value> toJs(Local<T> const& value, ReturnValuePolicy /* policy */, Local<Value> const& /* parent */) {
+        return value.asValue();
+    }
+    static Local<T> toCpp(Local<Value> const& value) { return value.as<T>(); }
 };
 
 // bool <-> Boolean
 template <>
 struct TypeConverter<bool> {
-    static Local<Boolean> toJs(bool value) { return Boolean::newBoolean(value); }
-    static bool           toCpp(Local<Value> const& value) { return value.asBoolean().getValue(); }
+    static Local<Boolean> toJs(bool value, ReturnValuePolicy /* policy */, Local<Value> const& /* parent */) {
+        return Boolean::newBoolean(value);
+    }
+    static bool toCpp(Local<Value> const& value) { return value.asBoolean().getValue(); }
 };
 
 // int/uint/float/double/int64/uint64 <-> Number/BigInt
 template <typename T>
     requires concepts::NumberLike<T>
 struct TypeConverter<T> {
-    static Local<Value> toJs(T value) {
+    static Local<Value> toJs(T value, ReturnValuePolicy /* policy */, Local<Value> const& /* parent */) {
         if constexpr (std::same_as<T, int64_t> || std::same_as<T, uint64_t>) {
             return BigInt::newBigInt(value); // C++ -> Js: 严格类型转换
         } else {
@@ -217,22 +221,27 @@ struct TypeConverter<T> {
 template <typename T>
     requires concepts::StringLike<T>
 struct TypeConverter<T> {
-    static Local<String> toJs(T const& value) { return String::newString(std::string_view{value}); }
-    static std::string   toCpp(Local<Value> const& value) { return value.asString().getValue(); } // always UTF-8
+    static Local<String> toJs(T const& value, ReturnValuePolicy /* policy */, Local<Value> const& /* parent */) {
+        return String::newString(std::string_view{value});
+    }
+    static std::string toCpp(Local<Value> const& value) { return value.asString().getValue(); } // always UTF-8
 };
 
 // enum -> Number (enum value)
 template <typename T>
     requires std::is_enum_v<T>
 struct TypeConverter<T> {
-    static Local<Number> toJs(T value) { return Number::newNumber(static_cast<int>(value)); }
-    static T             toCpp(Local<Value> const& value) { return static_cast<T>(value.asNumber().getInt32()); }
+    static Local<Number> toJs(T value, ReturnValuePolicy /* policy */, Local<Value> const& /* parent */) {
+        return Number::newNumber(static_cast<int>(value));
+    }
+    static T toCpp(Local<Value> const& value) { return static_cast<T>(value.asNumber().getInt32()); }
 };
 
 // std::optional <-> null/undefined
 template <typename T>
 struct TypeConverter<std::optional<T>> {
-    static Local<Value> toJs(std::optional<T> const& value) {
+    static Local<Value>
+    toJs(std::optional<T> const& value, ReturnValuePolicy /* policy */, Local<Value> const& /* parent */) {
         if (value) {
             return binding::toJs(value.value());
         }
@@ -249,7 +258,8 @@ struct TypeConverter<std::optional<T>> {
 // std::vector <-> Array
 template <typename T>
 struct TypeConverter<std::vector<T>> {
-    static Local<Value> toJs(std::vector<T> const& value) {
+    static Local<Value>
+    toJs(std::vector<T> const& value, ReturnValuePolicy /* policy */, Local<Value> const& /* parent */) {
         auto array = Array::newArray(value.size());
         for (std::size_t i = 0; i < value.size(); ++i) {
             array.set(i, binding::toJs(value[i]));
@@ -273,7 +283,8 @@ template <typename K, typename V>
 struct TypeConverter<std::unordered_map<K, V>> {
     static_assert(HasTypeConverter_v<V>, "Cannot convert std::unordered_map to Object; type V has no TypeConverter");
 
-    static Local<Value> toJs(std::unordered_map<K, V> const& value) {
+    static Local<Value>
+    toJs(std::unordered_map<K, V> const& value, ReturnValuePolicy /* policy */, Local<Value> const& /* parent */) {
         auto object = Object::newObject();
         for (auto const& [key, val] : value) {
             object.set(String::newString(key), binding::toJs(val));
@@ -302,7 +313,8 @@ struct TypeConverter<std::variant<Is...>> {
     );
     using TypedVariant = std::variant<Is...>;
 
-    static Local<Value> toJs(TypedVariant const& value) {
+    static Local<Value>
+    toJs(TypedVariant const& value, ReturnValuePolicy /* policy */, Local<Value> const& /* parent */) {
         if (value.valueless_by_exception()) {
             return Null::newNull();
         }
@@ -332,7 +344,9 @@ struct TypeConverter<std::variant<Is...>> {
 // std::monostate <-> null/undefined
 template <>
 struct TypeConverter<std::monostate> {
-    static Local<Value> toJs(std::monostate) { return Null::newNull(); }
+    static Local<Value> toJs(std::monostate, ReturnValuePolicy /* policy */, Local<Value> const& /* parent */) {
+        return Null::newNull();
+    }
 
     static std::monostate toCpp(Local<Value> const& value) {
         if (value.isNullOrUndefined()) {
@@ -348,7 +362,8 @@ struct TypeConverter<std::pair<Ty1, Ty2>> {
     static_assert(HasTypeConverter_v<Ty1>);
     static_assert(HasTypeConverter_v<Ty2>);
 
-    static Local<Value> toJs(std::pair<Ty1, Ty2> const& pair) {
+    static Local<Value>
+    toJs(std::pair<Ty1, Ty2> const& pair, ReturnValuePolicy /* policy */, Local<Value> const& /* parent */) {
         auto array = Array::newArray(2);
         array.set(0, binding::toJs(pair.first));
         array.set(1, binding::toJs(pair.second));
@@ -381,9 +396,9 @@ struct TypeConverter<std::function<R(Args...)>> {
     );
     using Fn = std::function<R(Args...)>;
 
-    // static Local<Value> toJs(Fn const& value, ReturnValuePolicy policy, Local<Value> /*parent*/) {
-    //     return adapter::wrapFunction(std::forward<Fn>(value), policy);
-    // }
+    static Local<Value> toJs(Fn const& value, ReturnValuePolicy policy, Local<Value> const& /*parent*/) {
+        return adapter::wrapFunction(std::forward<Fn>(value), policy);
+    }
     static Fn toCpp(Local<Value> const& value) { return adapter::wrapScriptCallback<R, Args...>(value); }
 };
 
@@ -502,19 +517,12 @@ struct TypeConverter<std::unique_ptr<T, Deleter>> {
 // free functions
 template <typename T>
 Local<Value> toJs(T&& val) {
-    return RawTypeConverter<T>::toJs(std::forward<T>(val));
+    return toJs(std::forward<T>(val), ReturnValuePolicy::kAutomatic, {});
 }
 
 template <typename T>
 Local<Value> toJs(T&& val, ReturnValuePolicy policy, Local<Value> parent) {
-    if constexpr (requires { RawTypeConverter<T>::toJs(std::forward<T>(val), policy, parent); }) {
-        return RawTypeConverter<T>::toJs(std::forward<T>(val), policy, parent);
-    } else {
-        if constexpr (!requires { RawTypeConverter<T>::toJs(std::forward<T>(val)); }) {
-            static_assert(sizeof(T) == 0, "No suitable toJs converter found for this type.");
-        }
-        return toJs(std::forward<T>(val)); // try drop policy and parent
-    }
+    return RawTypeConverter<T>::toJs(std::forward<T>(val), policy, parent);
 }
 
 template <typename T>
