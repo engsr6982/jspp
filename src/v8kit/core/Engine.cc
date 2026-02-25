@@ -10,6 +10,7 @@
 
 #include <cassert>
 #include <fstream>
+#include <utility>
 
 
 V8KIT_WARNING_GUARD_BEGIN
@@ -149,6 +150,7 @@ void Engine::addManagedResource(void* resource, v8::Local<v8::Value> value, std:
                 data.SetSecondPassCallback([](v8::WeakCallbackInfo<void> const& data) {
                     auto       managed = static_cast<ManagedResource*>(data.GetParameter());
                     v8::Locker locker(managed->runtime->isolate_);
+                    managed->deleter(managed->resource);
                     delete managed;
                 });
             }
