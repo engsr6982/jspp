@@ -66,12 +66,12 @@ struct OverrideReturner<void> {
         static const char        __v8kit_method_id = 0;                                                                \
         ::v8kit::TrampolineGuard __guard{this, &__v8kit_method_id};                                                    \
         if (!__guard.is_recursive) {                                                                                   \
-            auto _maybe_override_ = this->getOverride(String::newString(SCRIPTMETHOD));                                \
+            auto _maybe_override_ = this->getOverride(::v8kit::String::newString(SCRIPTMETHOD));                       \
             if (_maybe_override_.isFunction()) {                                                                       \
                 auto _override_fn_ = _maybe_override_.asFunction();                                                    \
                 auto value =                                                                                           \
-                    v8kit::binding::call(_override_fn_, this->getThis().asObject() __VA_OPT__(, ) __VA_ARGS__);        \
-                return v8kit::binding::OverrideReturner<RETURN_TYPE>::convert(value);                                  \
+                    ::v8kit::binding::call(_override_fn_, this->getThis().asObject() __VA_OPT__(, ) __VA_ARGS__);      \
+                return ::v8kit::binding::OverrideReturner<RETURN_TYPE>::convert(value);                                \
             }                                                                                                          \
         }                                                                                                              \
     }                                                                                                                  \
@@ -86,16 +86,16 @@ struct OverrideReturner<void> {
         static const char        __v8kit_method_id = 0;                                                                \
         ::v8kit::TrampolineGuard __guard{this, &__v8kit_method_id};                                                    \
         if (!__guard.is_recursive) {                                                                                   \
-            auto _maybe_override_ = this->getOverride(String::newString(SCRIPTMETHOD));                                \
+            auto _maybe_override_ = this->getOverride(::v8kit::String::newString(SCRIPTMETHOD));                       \
             if (_maybe_override_.isFunction()) {                                                                       \
                 auto _override_fn_ = _maybe_override_.asFunction();                                                    \
                 auto value =                                                                                           \
-                    v8kit::binding::call(_override_fn_, this->getThis().asObject() __VA_OPT__(, ) __VA_ARGS__);        \
-                return v8kit::binding::OverrideReturner<RETURN_TYPE>::convert(value);                                  \
+                    ::v8kit::binding::call(_override_fn_, this->getThis().asObject() __VA_OPT__(, ) __VA_ARGS__);      \
+                return ::v8kit::binding::OverrideReturner<RETURN_TYPE>::convert(value);                                \
             }                                                                                                          \
         }                                                                                                              \
     }                                                                                                                  \
     /* 既然是纯虚函数，JS 侧调用 super.method() 应该什么都不做或者抛出异常 */                                          \
     if constexpr (!std::is_void_v<RETURN_TYPE>) {                                                                      \
-        throw Exception("Pure virtual method called without JS override", Exception::Type::TypeError);                 \
+        throw ::v8kit::Exception("Pure virtual method called without JS override", Exception::Type::TypeError);        \
     }
