@@ -2,8 +2,7 @@
 #include "v8kit/core/Exception.h"
 #include "v8kit/core/MetaInfo.h"
 #include "v8kit/core/NativeInstance.h"
-#include "v8kit/core/Reference.h"
-#include "v8kit/core/Value.h"
+#include "v8kit/core/Trampoline.h"
 
 #include "ReturnValuePolicy.h"
 #include "traits/Polymorphic.h"
@@ -39,6 +38,13 @@ public:
 
 
     std::type_index type_id() const override { return std::type_index(typeid(std::remove_cv_t<ElementType>)); }
+
+    enable_trampoline* get_trampoline() const override {
+        if constexpr (std::is_polymorphic_v<ElementType>) {
+            return dynamic_cast<enable_trampoline*>(get_raw_ptr());
+        }
+        return nullptr;
+    }
 
     bool is_expired() const override {
         if constexpr (std::is_pointer_v<Holder>) {

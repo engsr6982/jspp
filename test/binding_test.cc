@@ -1,8 +1,10 @@
+#include "v8kit/binding/TypeConverter.h"
 #include "v8kit/core/Engine.h"
 #include "v8kit/core/EngineScope.h"
 #include "v8kit/core/Exception.h"
 #include "v8kit/core/MetaInfo.h"
 #include "v8kit/core/Reference.h"
+#include "v8kit/core/Trampoline.h"
 #include "v8kit/core/Value.h"
 
 #include "v8kit/binding/BindingUtils.h"
@@ -376,7 +378,8 @@ TEST_CASE_METHOD(BindingTestFixture, "overload and builder mode compatibility") 
     EngineScope scope{engine.get()};
     engine->registerClass(MessageStreamMeta);
 
-    REQUIRE_NOTHROW(engine->eval(String::newString("new MessageStream().write('hello').write(123).str() == 'hello123'"))
+    REQUIRE_NOTHROW(
+        engine->eval(String::newString("new MessageStream().write('hello').write(123).str() == 'hello123'"))
     );
 
     REQUIRE_EVAL("new MessageStream().write('test').str() == 'test'", "string overload check");
@@ -815,6 +818,64 @@ TEST_CASE_METHOD(BindingTestFixture, "Return Value Policy coverage") {
     REQUIRE_EVAL("new RvpManager().getInternal().val === 42", "kReferenceInternal keeps parent alive");
 
     // 5. kAutomatic 及 kMove 的特性在上述普通按值返回的 TypeConverter 逻辑中已被隐式测试到。
+}
+
+
+// enable_trampoline
+class Plugin {
+public:
+    virtual ~Plugin() = default;
+
+    virtual bool onLoad() { return false; }
+
+    virtual bool onUnload() { return false; }
+};
+class JSPlugin : public Plugin, public enable_trampoline {
+public:
+    bool onLoad() override { V8KIT_OVERRIDE(bool, Plugin, "onLoad", onLoad); }
+};
+auto PluginMeta   = defClass<Plugin>("PluginBase").ctor(nullptr).build();
+auto JSPluginMeta = defClass<JSPlugin>("Plugin")
+                        .ctor()
+                        .inherit<Plugin>(PluginMeta)
+                        .method("onLoad", &JSPlugin::onLoad)
+                        .method("onUnload", &JSPlugin::onUnload)
+                        .build();
+TEST_CASE_METHOD(BindingTestFixture, "enable_trampoline") {
+    EngineScope scope{engine.get()};
+
+    engine->registerClass(PluginMeta);
+    engine->registerClass(JSPluginMeta);
+
+    engine->globalThis().set(
+        String::newString("test"), //
+        Function::newFunction(cpp_func([](Plugin& plugin) {
+            plugin.onLoad();
+            plugin.onUnload();
+        }))
+    );
+
+    REQUIRE_THROWS_MATCHES(
+        engine->eval(String::newString(R"(
+            class MyPlugin extends Plugin {
+                constructor() {
+                    super();
+                }
+                onLoad() {
+                    let raw = super.onLoad();
+                    if (raw !== false) {
+                        // call 了基类，但基类没有实现，这里应该返回 false
+                        throw new Error("raw !== false, call super.onLoad failed");
+                    }
+                    throw new Error("onLoad called");
+                }
+            }
+            let plugin = new MyPlugin();
+            test(plugin);
+        )")),
+        Exception,
+        Catch::Matchers::Message("Uncaught Error: onLoad called")
+    );
 }
 
 

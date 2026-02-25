@@ -6,6 +6,7 @@
 namespace v8kit {
 
 struct ClassMeta;
+class enable_trampoline;
 
 class NativeInstance {
 protected:
@@ -36,6 +37,8 @@ public:
     virtual bool is_owned() const = 0;
 
     virtual void* release_ownership() = 0;
+
+    virtual enable_trampoline* get_trampoline() const { return nullptr; }
 
     template <typename T>
     T* unwrap() const {

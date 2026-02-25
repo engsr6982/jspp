@@ -5,6 +5,7 @@
 #include "MetaInfo.h"
 #include "Reference.h"
 #include "TrackedHandle.h"
+#include "Trampoline.h"
 #include "Value.h"
 #include "ValueHelper.h"
 
@@ -46,12 +47,14 @@ Engine::Engine() {
     context_.Reset(isolate_, v8::Context::New(isolate_));
 
     constructorSymbol_ = v8::Global<v8::Symbol>(isolate_, v8::Symbol::New(isolate_));
+    nativeFunctionTag_ = v8::Global<v8::Private>(isolate_, v8::Private::New(isolate_));
 }
 Engine::Engine(v8::Isolate* isolate, v8::Local<v8::Context> context)
 : isolate_(isolate),
   context_(v8::Global<v8::Context>{isolate, context}),
   isExternalIsolate_(true) {
     constructorSymbol_ = v8::Global<v8::Symbol>(isolate_, v8::Symbol::New(isolate_));
+    nativeFunctionTag_ = v8::Global<v8::Private>(isolate_, v8::Private::New(isolate_));
 }
 
 Engine::~Engine() {
@@ -80,6 +83,7 @@ Engine::~Engine() {
         }
 
         constructorSymbol_.Reset();
+        nativeFunctionTag_.Reset();
         classConstructors_.clear();
         registeredClasses_.clear();
         managedResources_.clear();
@@ -145,6 +149,7 @@ void Engine::addManagedResource(void* resource, v8::Local<v8::Value> value, std:
                 v8::Locker locker(runtime->isolate_); // Since the v8 GC is not on the same thread, locking is required
                 auto       iter = runtime->managedResources_.find(managed);
                 assert(iter != runtime->managedResources_.end()); // ManagedResource should be in the map
+                iter->second.Reset();
                 runtime->managedResources_.erase(iter);
 
                 data.SetSecondPassCallback([](v8::WeakCallbackInfo<void> const& data) {
@@ -396,6 +401,14 @@ v8::Local<v8::FunctionTemplate> Engine::newConstructor(ClassMeta const& meta) {
                     );
                 }
 
+                // Trampoline Support
+                if (auto trampoline = payload->getHolder().get_trampoline()) {
+                    auto weak           = TrackedWeak<Object>::create(ValueHelper::wrap<Object>(info.This()));
+                    trampoline->engine_ = runtime;
+                    trampoline->object_ = std::move(weak);
+                }
+
+                // 托管 InstancePayload
                 runtime->addManagedResource(payload, info.This(), [](void* payload) {
                     auto typed = static_cast<InstancePayload*>(payload);
                     if (typed->constructFromJs_) {
@@ -485,6 +498,9 @@ void Engine::buildInstanceMembers(v8::Local<v8::FunctionTemplate>& obj, ClassMet
     auto prototype = obj->PrototypeTemplate();
     auto signature = v8::Signature::New(isolate_);
 
+    auto ctx = context_.Get(isolate_);
+    auto tag = nativeFunctionTag_.Get(isolate_);
+
     for (auto& method : instanceMeta.methods_) {
         auto scriptMethodName = String::newString(method.name_);
 
@@ -508,6 +524,8 @@ void Engine::buildInstanceMembers(v8::Local<v8::FunctionTemplate>& obj, ClassMet
             v8::External::New(isolate_, const_cast<InstanceMemberMeta::Method*>(&method)),
             signature
         );
+        auto jsFunc = fn->GetFunction(ctx).ToLocalChecked();
+        jsFunc->SetPrivate(ctx, tag, v8::True(isolate_)); // mark as native function
         prototype->Set(ValueHelper::unwrap(scriptMethodName), fn, v8::PropertyAttribute::DontDelete);
     }
 

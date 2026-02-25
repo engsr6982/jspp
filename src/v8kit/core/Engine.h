@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <typeindex>
+#include <unordered_map>
 
 namespace v8kit {
 
@@ -101,6 +102,7 @@ private:
     friend ExitEngineScope;
     friend internal::V8EscapeScope;
     friend class ITrackedHandle;
+    friend class enable_trampoline;
 
     template <typename>
     friend class Global;
@@ -130,6 +132,9 @@ private:
 
     // This symbol is used to mark the construction of objects from C++ (with special logic).
     v8::Global<v8::Symbol> constructorSymbol_{};
+
+    // Mark C++ as a bound function to prevent an infinite loop when JS dispatches an override
+    v8::Global<v8::Private> nativeFunctionTag_{};
 
     std::unordered_map<ManagedResource*, v8::Global<v8::Value>>            managedResources_;
     std::unordered_map<std::string, ClassMeta const*>                      registeredClasses_;

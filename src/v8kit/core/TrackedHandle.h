@@ -40,11 +40,29 @@ public:
 
     [[nodiscard]] Global<T>& global() { return global_; }
 
-    [[nodiscard]] static std::shared_ptr<TrackedGlobal> create(Global<T>&& global) {
-        return std::make_shared<TrackedGlobal>(std::move(global));
-    }
     [[nodiscard]] static std::shared_ptr<TrackedGlobal> create(Local<T>&& local) {
         return std::make_shared<TrackedGlobal>(std::move(local));
+    }
+};
+
+template <typename T>
+class TrackedWeak final : public ITrackedHandle {
+    Weak<T> weak_;
+
+public:
+    explicit TrackedWeak(Local<T>&& weak) {
+        weak_.reset(weak);
+        if (auto engine = weak_.engine()) {
+            this->track(engine);
+        }
+    }
+
+    void onEngineDestroy() override { weak_.reset(); }
+
+    [[nodiscard]] Weak<T>& weak() { return weak_; }
+
+    [[nodiscard]] static std::shared_ptr<TrackedWeak> create(Local<T>&& local) {
+        return std::make_shared<TrackedWeak>(std::move(local));
     }
 };
 

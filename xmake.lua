@@ -48,6 +48,7 @@ target("v8kit")
     if is_plat("windows") then 
         add_cxflags("/utf-8", "/W4", "/sdl")
         add_cxxflags("/Zc:__cplusplus", {force = true})
+        add_cxxflags("/Zc:preprocessor");
     elseif is_plat("linux") then
         add_cxflags("-fPIC", "-stdlib=libc++", {force = true})
         add_syslinks("dl", "pthread")
