@@ -41,7 +41,7 @@ public:
 
     enable_trampoline* get_trampoline() const override {
         if constexpr (std::is_base_of_v<enable_trampoline, ElementType> && std::is_polymorphic_v<ElementType>) {
-            return dynamic_cast<enable_trampoline*>(get_raw_ptr());
+            return static_cast<enable_trampoline*>(get_raw_ptr());
         } else {
             return nullptr;
         }

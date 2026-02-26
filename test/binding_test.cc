@@ -850,7 +850,11 @@ public:
 };
 class JSPlugin : public Plugin, public enable_trampoline {
 public:
-    bool onLoad(Bootstrap const& boot) override { V8KIT_OVERRIDE(bool, Plugin, "onLoad", onLoad, std::ref(boot)); }
+    bool onLoad(Bootstrap const& boot) override {
+        REQUIRE(getEngine() != nullptr);
+        REQUIRE_FALSE(getThis().isNullOrUndefined());
+        V8KIT_OVERRIDE(bool, Plugin, "onLoad", onLoad, std::ref(boot));
+    }
 };
 auto BootstrapMeta = defClass<Bootstrap>("Bootstrap").ctor<>().prop_readonly("pass", &Bootstrap::pass).build();
 auto JSPluginMeta  = defClass<JSPlugin>("Plugin")
