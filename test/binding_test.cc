@@ -503,6 +503,11 @@ class SmartPointerTest {
 public:
     int id_{0};
 
+    SmartPointerTest(int id) : id_{id} {}
+
+    SmartPointerTest(SmartPointerTest const&)            = delete;
+    SmartPointerTest& operator=(SmartPointerTest const&) = delete;
+
     static std::unique_ptr<SmartPointerTest> withUnique(int id) { return std::make_unique<SmartPointerTest>(id); }
     static std::shared_ptr<SmartPointerTest> withShared() {
         static std::shared_ptr<SmartPointerTest> shared = std::make_shared<SmartPointerTest>(0);
