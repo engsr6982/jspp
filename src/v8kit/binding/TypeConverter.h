@@ -12,9 +12,11 @@
 #include "v8kit/core/Value.h"
 
 #include <cassert>
+#include <functional>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <variant>
 
 namespace v8kit::binding {
@@ -155,13 +157,14 @@ struct GenericTypeConverter {
     }
 
     // JS -> C++
-    static T* toCpp(Local<Value> const& value) {
+    template <typename U = T>
+    static U* toCpp(Local<Value> const& value) {
         auto& engine  = EngineScope::currentEngineChecked();
         auto  payload = engine.getInstancePayload(value.asObject());
         if (!payload) {
             throw Exception("Argument is not a native instance");
         }
-        auto ptr = payload->unwrap<T>();
+        auto ptr = payload->unwrap<U>();
         if (!ptr) throw Exception("Type mismatch or cast failed");
         return ptr;
     }
@@ -409,7 +412,7 @@ struct TypeConverter<std::shared_ptr<T>> {
 
     template <typename U>
     static Local<Value> toJs(U&& value, ReturnValuePolicy policy, Local<Value> parent) {
-        return detail::GenericTypeConverter<T>::template toJs<U>(std::forward<U>(value), policy, parent);
+        return TypeConverter<T>::template toJs<U>(std::forward<U>(value), policy, parent);
     }
 
     static Ptr toCpp(Local<Value> const& value) {
@@ -471,7 +474,7 @@ struct TypeConverter<std::unique_ptr<T, Deleter>> {
 
     template <typename U>
     static Local<Value> toJs(U&& value, ReturnValuePolicy policy, Local<Value> parent) {
-        return detail::GenericTypeConverter<T>::template toJs<U>(std::forward<U>(value), policy, parent);
+        return TypeConverter<T>::template toJs<U>(std::forward<U>(value), policy, parent);
     }
 
     static Ptr toCpp(Local<Value> const& value) {
@@ -513,6 +516,19 @@ struct TypeConverter<std::unique_ptr<T, Deleter>> {
     }
 };
 
+template <typename T>
+struct TypeConverter<std::reference_wrapper<T>> {
+    static Local<Value> toJs(std::reference_wrapper<T> value, ReturnValuePolicy policy, Local<Value> parent) {
+        if (policy == ReturnValuePolicy::kAutomatic || policy == ReturnValuePolicy::kTakeOwnership) {
+            policy = ReturnValuePolicy::kReference;
+        }
+        return TypeConverter<T>::toJs(value.get(), policy, parent);
+    }
+
+    static std::reference_wrapper<T> toCpp(Local<Value> const& value) {
+        return std::ref(TypeConverter<T>::toCpp(value));
+    }
+};
 
 // free functions
 template <typename T>
@@ -536,7 +552,19 @@ decltype(auto) toCpp(Local<Value> const& value) {
     using Conv    = RawTypeConverter<T>;
     using ConvRet = decltype(Conv::toCpp(std::declval<Local<Value>>()));
 
-    if constexpr (std::is_lvalue_reference_v<T>) {
+    using RequestT = std::remove_pointer_t<std::remove_reference_t<T>>;
+    // 如果转换器支持完美转发，则直接调用
+    if constexpr (requires { Conv::template toCpp<RequestT>(value); }) {
+        auto p = Conv::template toCpp<RequestT>(value);
+        if constexpr (std::is_pointer_v<T>) {
+            return p;
+        } else {
+            if (p == nullptr) [[unlikely]] {
+                throw std::runtime_error("TypeConverter::toCpp returned a null pointer.");
+            }
+            return static_cast<T>(*p);
+        }
+    } else if constexpr (std::is_lvalue_reference_v<T>) {
         // 左值引用 T&
         if constexpr (std::is_pointer_v<std::remove_reference_t<ConvRet>>) {
             auto p = Conv::toCpp(value); // 返回 T*

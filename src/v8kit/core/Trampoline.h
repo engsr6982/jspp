@@ -41,12 +41,13 @@ private:
 };
 
 namespace binding {
-
+template <typename T>
+decltype(auto) toCpp(Local<Value> const& value);
 template <typename T>
 struct OverrideReturner {
     static T convert(Local<Value> const& val) {
         // Delay template instantiation to avoid errors caused by assertions.
-        return toCpp<T>(val);
+        return v8kit::binding::toCpp<T>(val);
     }
 };
 

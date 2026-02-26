@@ -822,20 +822,34 @@ TEST_CASE_METHOD(BindingTestFixture, "Return Value Policy coverage") {
 
 
 // enable_trampoline
+
+class Bootstrap {
+public:
+    std::string pass{"unique"};
+
+    Bootstrap() {}
+
+    Bootstrap(Bootstrap const&) { pass = "copy"; }
+    Bootstrap& operator=(Bootstrap const&) {
+        pass = "copy";
+        return *this;
+    }
+};
 class Plugin {
 public:
     virtual ~Plugin() = default;
 
-    virtual bool onLoad() { return false; }
+    virtual bool onLoad(Bootstrap const&) { return false; }
 
     virtual bool onUnload() { return false; }
 };
 class JSPlugin : public Plugin, public enable_trampoline {
 public:
-    bool onLoad() override { V8KIT_OVERRIDE(bool, Plugin, "onLoad", onLoad); }
+    bool onLoad(Bootstrap const& boot) override { V8KIT_OVERRIDE(bool, Plugin, "onLoad", onLoad, std::ref(boot)); }
 };
-auto PluginMeta   = defClass<Plugin>("PluginBase").ctor(nullptr).build();
-auto JSPluginMeta = defClass<JSPlugin>("Plugin")
+auto BootstrapMeta = defClass<Bootstrap>("Bootstrap").ctor<>().prop_readonly("pass", &Bootstrap::pass).build();
+auto PluginMeta    = defClass<Plugin>("PluginBase").ctor(nullptr).build();
+auto JSPluginMeta  = defClass<JSPlugin>("Plugin")
                         .ctor()
                         .inherit<Plugin>(PluginMeta)
                         .method("onLoad", &JSPlugin::onLoad)
@@ -844,13 +858,15 @@ auto JSPluginMeta = defClass<JSPlugin>("Plugin")
 TEST_CASE_METHOD(BindingTestFixture, "enable_trampoline") {
     EngineScope scope{engine.get()};
 
+    engine->registerClass(BootstrapMeta);
     engine->registerClass(PluginMeta);
     engine->registerClass(JSPluginMeta);
 
     engine->globalThis().set(
         String::newString("test"), //
         Function::newFunction(cpp_func([](Plugin& plugin) {
-            plugin.onLoad();
+            auto boot = Bootstrap{};
+            plugin.onLoad(boot);
             plugin.onUnload();
         }))
     );
@@ -861,11 +877,15 @@ TEST_CASE_METHOD(BindingTestFixture, "enable_trampoline") {
                 constructor() {
                     super();
                 }
-                onLoad() {
-                    let raw = super.onLoad();
+                onLoad(boot) {
+                    let raw = super.onLoad(boot);
                     if (raw !== false) {
                         // call 了基类，但基类没有实现，这里应该返回 false
                         throw new Error("raw !== false, call super.onLoad failed");
+                    }
+                    if (boot.pass !== "unique") {
+                        // 意外的拷贝了 bootstrap
+                        throw new Error("boot.pass !== 'unique'");
                     }
                     throw new Error("onLoad called");
                 }
