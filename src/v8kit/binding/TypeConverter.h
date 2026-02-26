@@ -164,9 +164,7 @@ struct GenericTypeConverter {
         if (!payload) {
             throw Exception("Argument is not a native instance");
         }
-        auto ptr = payload->unwrap<U>();
-        if (!ptr) throw Exception("Type mismatch or cast failed");
-        return ptr;
+        return payload->unwrap<U>();
     }
 };
 
@@ -543,74 +541,88 @@ Local<Value> toJs(T&& val, ReturnValuePolicy policy, Local<Value> parent) {
 
 template <typename T>
 decltype(auto) toCpp(Local<Value> const& value) {
-    using BareT = std::remove_cv_t<std::remove_reference_t<T>>; // T
+    using BareT = std::remove_cv_t<std::remove_reference_t<T>>;
 
     if constexpr (traits::is_unique_ptr_v<BareT>) {
         static_assert(std::is_same_v<T, BareT>, "Unique pointers must be passed by value to toCpp<T*>.");
     }
 
-    using Conv    = RawTypeConverter<T>;
-    using ConvRet = decltype(Conv::toCpp(std::declval<Local<Value>>()));
-
+    using Conv     = RawTypeConverter<T>;
     using RequestT = std::remove_pointer_t<std::remove_reference_t<T>>;
-    // 如果转换器支持完美转发，则直接调用
+
+    // ------------------------------------------------------------------
+    // 支持完美类型转发的 Native Class 转换器 (GenericTypeConverter)
+    // ------------------------------------------------------------------
     if constexpr (requires { Conv::template toCpp<RequestT>(value); }) {
         auto p = Conv::template toCpp<RequestT>(value);
+        if (!p) [[unlikely]] {
+            throw std::runtime_error("TypeConverter::toCpp returned a null pointer.");
+        }
         if constexpr (std::is_pointer_v<T>) {
             return p;
         } else {
-            if (p == nullptr) [[unlikely]] {
-                throw std::runtime_error("TypeConverter::toCpp returned a null pointer.");
-            }
             return static_cast<T>(*p);
         }
-    } else if constexpr (std::is_lvalue_reference_v<T>) {
-        // 左值引用 T&
-        if constexpr (std::is_pointer_v<std::remove_reference_t<ConvRet>>) {
-            auto p = Conv::toCpp(value); // 返回 T*
-            if (p == nullptr) [[unlikely]] {
-                throw std::runtime_error("TypeConverter::toCpp returned a null pointer.");
-            }
-            return static_cast<T&>(*p); // 返回 T&
-        } else if constexpr (std::is_lvalue_reference_v<ConvRet> || std::is_const_v<std::remove_reference_t<T>>) {
-            return Conv::toCpp(value); // 已返回 T&，直接转发 或者 const T& 可以绑定临时
-        } else {
-            static_assert(
-                std::is_pointer_v<std::remove_reference_t<ConvRet>> || std::is_lvalue_reference_v<ConvRet>,
-                "TypeConverter::toCpp must return either T* or T& when toCpp<T&> is required. Returning T (by "
-                "value) cannot bind to a non-const lvalue reference; change TypeConverter or request a value type."
-            );
-        }
-    } else if constexpr (std::is_pointer_v<T>) {
-        // 指针类型 T*
-        if constexpr (std::is_pointer_v<std::remove_reference_t<ConvRet>>) {
-            return Conv::toCpp(value); // 直接返回
-        } else if constexpr (std::is_lvalue_reference_v<ConvRet>) {
-            return std::addressof(Conv::toCpp(value)); // 返回 T& -> 可以取地址
-        } else {
-            static_assert(
-                std::is_pointer_v<std::remove_reference_t<ConvRet>> || std::is_lvalue_reference_v<ConvRet>,
-                "TypeConverter::toCpp must return T* or T& when toCpp<T*> is required. "
-                "Returning T (by value) would produce pointer to temporary (unsafe)."
-            );
-        }
-    } else {
-        // 值类型 T
+    }
+    // ------------------------------------------------------------------
+    // 定长返回类型的普通转换器 (基础类型、STL、Enum 等)
+    // ------------------------------------------------------------------
+    else {
+        using ConvRet    = decltype(Conv::toCpp(std::declval<Local<Value>>()));
         using RawConvRet = std::remove_cv_t<std::remove_reference_t<ConvRet>>;
-        if constexpr ((std::is_same_v<RawConvRet, BareT> || internal::CppValueTypeTransformer_v<RawConvRet, BareT>)
-                      && !std::is_pointer_v<std::remove_reference_t<ConvRet>> && !std::is_lvalue_reference_v<ConvRet>) {
-            return Conv::toCpp(value); // 按值返回 / 直接返回 (可能 NRVO)
-        } else {
-            static_assert(
-                std::is_same_v<RawConvRet, BareT> && !std::is_pointer_v<std::remove_reference_t<ConvRet>>
-                    && !std::is_lvalue_reference_v<ConvRet>,
-                "TypeConverter::toCpp must return T (by value) for toCpp<T>. "
-                "Other return forms (T* or T&) are not supported for value request."
-            );
+
+        constexpr bool is_conv_ptr  = std::is_pointer_v<std::remove_reference_t<ConvRet>>;
+        constexpr bool is_conv_lref = std::is_lvalue_reference_v<ConvRet>;
+
+        // 请求左值引用 (T& 或 const T&)
+        if constexpr (std::is_lvalue_reference_v<T>) {
+            if constexpr (is_conv_ptr) {
+                auto p = Conv::toCpp(value);
+                if (!p) [[unlikely]] {
+                    throw std::runtime_error("TypeConverter::toCpp returned a null pointer.");
+                }
+                return static_cast<T>(*p);
+            } else if constexpr (is_conv_lref || std::is_const_v<std::remove_reference_t<T>>) {
+                // 直接 return，让 decltype(auto) 决定是返回引用还是按值返回 (防临时变量悬垂)
+                return Conv::toCpp(value);
+            } else {
+                static_assert(
+                    is_conv_ptr || is_conv_lref || std::is_const_v<std::remove_reference_t<T>>,
+                    "TypeConverter must return T* or T& when toCpp<T&> is requested (unless target is const T&)."
+                );
+            }
+        }
+        // 请求指针 (T*)
+        else if constexpr (std::is_pointer_v<T>) {
+            if constexpr (is_conv_ptr) {
+                return Conv::toCpp(value);
+            } else if constexpr (is_conv_lref) {
+                return std::addressof(Conv::toCpp(value));
+            } else {
+                static_assert(
+                    is_conv_ptr || is_conv_lref,
+                    "TypeConverter must return T* or T& when toCpp<T*> is requested."
+                );
+            }
+        }
+        // 请求值传递 (T)
+        else {
+            if constexpr (!is_conv_ptr && !is_conv_lref) {
+                if constexpr (std::is_same_v<RawConvRet, BareT>
+                              || internal::CppValueTypeTransformer_v<RawConvRet, BareT>) {
+                    return Conv::toCpp(value);
+                } else {
+                    static_assert(
+                        std::is_same_v<RawConvRet, BareT> || internal::CppValueTypeTransformer_v<RawConvRet, BareT>,
+                        "TypeConverter return type mismatch with requested value type."
+                    );
+                }
+            } else {
+                static_assert(!is_conv_ptr && !is_conv_lref, "TypeConverter must return by value for a value request.");
+            }
         }
     }
 }
-
 
 namespace adapter {
 

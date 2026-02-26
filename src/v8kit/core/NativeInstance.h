@@ -52,6 +52,12 @@ public:
             throw Exception("Cannot unwrap const instance to mutable pointer");
         }
         void* raw = cast(std::type_index(typeid(std::remove_cv_t<T>)));
+        if (!raw) {
+            throw Exception{
+                std::string{"Cannot cast instance of type "} + type_id().name() + " to " + typeid(T).name(),
+                Exception::Type::TypeError
+            };
+        }
         return static_cast<T*>(raw);
     }
 };
