@@ -17,6 +17,8 @@ protected:
     enable_trampoline()  = default;
     ~enable_trampoline() = default;
 
+    Engine* getEngine() const;
+
     Local<Value> getThis() const;
 
     Local<Value> getOverride(Local<String> const& methodName) const;
@@ -61,6 +63,7 @@ struct OverrideReturner<void> {
 } // namespace v8kit
 
 #define V8KIT_OVERRIDE_IMPL(RETURN_TYPE, BASE_CLASS, SCRIPTMETHOD, METHOD, ...)                                        \
+    ::v8kit::EngineScope __lock{this->getEngine()};                                                                    \
     {                                                                                                                  \
         /* 每个成员函数内的 static 变量都有唯一的内存地址 */                                                           \
         /* 利用这个地址作为该方法的 methodId */                                                                        \
@@ -91,7 +94,7 @@ struct OverrideReturner<void> {
     /* 既然是纯虚函数，JS 侧调用 super.method() 应该什么都不做或者抛出异常 */                                          \
     if constexpr (!std::is_void_v<RETURN_TYPE>) {                                                                      \
         throw ::v8kit::Exception(                                                                                      \
-            "Tried to call pure virtual function: " #BASE_CLASS "::" #METHOD "(JS: "#SCRIPTMETHOD ")",                \
+            "Tried to call pure virtual function: " #BASE_CLASS "::" #METHOD "(JS: " #SCRIPTMETHOD ")",                \
             ::v8kit::Exception::Type::TypeError                                                                        \
         );                                                                                                             \
     }

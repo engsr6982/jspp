@@ -5,6 +5,7 @@
 
 namespace v8kit {
 
+Engine* enable_trampoline::getEngine() const { return engine_; }
 
 Local<Value> enable_trampoline::getThis() const {
     if (!object_ || !engine_ || object_->weak().isEmpty()) {
