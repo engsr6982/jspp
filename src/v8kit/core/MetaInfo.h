@@ -95,10 +95,22 @@ struct ClassMeta {
     using UpcasterCallback = void* (*)(void*);
     UpcasterCallback const upcaster_{nullptr}; // 转换到直接基类 (base_) 的函数
 
+    /**
+     * @brief 隐式接口/多继承放行映射表 (用于解除对 base_ 的强制依赖)
+     * @note 这里的类型转换[仅对 C++ 类型系统可见]，不会影响 JavaScript 的原型链 (prototype)。
+     *       当 C++ 侧需要将一个 JS 对象 Unwrap 为某个基类或接口时，会优先从这里查找转换函数，完成指针偏移。
+     */
+    std::unordered_map<std::type_index, UpcasterCallback> const extraCasters_;
+
     [[nodiscard]] void* castTo(void* ptr, std::type_index targetId) const {
         if (typeId_ == targetId) return ptr;
 
-        // 递归向基类查找
+        // 优先检查隐式接口放行表，执行安全的指针向上转型 (Upcast)
+        if (auto it = extraCasters_.find(targetId); it != extraCasters_.end()) {
+            return it->second(ptr);
+        }
+
+        // 递归向单继承原型链 (JS Prototype Chain 映射) 查找
         if (base_ && upcaster_) {
             // 先转为 Base*
             void* basePtr = upcaster_(ptr);
@@ -112,10 +124,12 @@ struct ClassMeta {
 
     [[nodiscard]] inline bool isA(std::type_index typeIdx, bool recursion = true) const {
         if (typeId_ == typeIdx) return true;
+        if (extraCasters_.contains(typeIdx)) return true; // 兼容隐式接口检查
         if (!recursion || !base_) return false;
         ClassMeta const* curr = base_;
         while (curr != nullptr) {
             if (curr->typeId_ == typeIdx) return true;
+            if (curr->extraCasters_.contains(typeIdx)) return true; // 祖先类实现的接口同样有效
             curr = curr->base_;
         }
         return false;
@@ -131,19 +145,21 @@ struct ClassMeta {
     }
 
     explicit ClassMeta(
-        std::string        name,
-        StaticMemberMeta   staticMeta,
-        InstanceMemberMeta instanceMeta,
-        ClassMeta const*   base,
-        std::type_index    typeId,
-        UpcasterCallback   upcaster = nullptr
+        std::string                                           name,
+        StaticMemberMeta                                      staticMeta,
+        InstanceMemberMeta                                    instanceMeta,
+        ClassMeta const*                                      base,
+        std::type_index                                       typeId,
+        UpcasterCallback                                      upcaster     = nullptr,
+        std::unordered_map<std::type_index, UpcasterCallback> extraCasters = {}
     )
     : name_(std::move(name)),
       staticMeta_(std::move(staticMeta)),
       instanceMeta_(std::move(instanceMeta)),
       base_(base),
       typeId_(typeId),
-      upcaster_(upcaster) {}
+      upcaster_(upcaster),
+      extraCasters_(std::move(extraCasters)) {}
 };
 
 struct EnumMeta {

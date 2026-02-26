@@ -34,7 +34,8 @@ class ClassMetaBuilder {
     ConstructorCallback              userDefinedConstructor_ = nullptr;
     std::vector<ConstructorCallback> constructors_           = {};
 
-    ClassMeta::UpcasterCallback upcaster_ = nullptr;
+    ClassMeta::UpcasterCallback                                      upcaster_ = nullptr;
+    std::unordered_map<std::type_index, ClassMeta::UpcasterCallback> extraCasters_;
 
     static constexpr bool isInstanceClass = !std::is_void_v<T>;
 
@@ -48,7 +49,8 @@ class ClassMetaBuilder {
       base_(other.base_),
       userDefinedConstructor_(std::move(other.userDefinedConstructor_)),
       constructors_(std::move(other.constructors_)),
-      upcaster_(other.upcaster_) {
+      upcaster_(other.upcaster_),
+      extraCasters_(std::move(other.extraCasters_)) {
         // note: other may be in moved-from state
     }
 
@@ -194,6 +196,13 @@ public:
         }
     }
 
+    /**
+     * @brief 显式单继承绑定 (C++ -> JS)
+     * @note 1. 会在 JavaScript 侧建立真实的 prototype 原型链关系 (类似 JS 中的 class A extends B)。
+     * @note 2. 要求被继承的基类 `meta` 必须也是暴露给 JS 的。
+     * @note 3. JavaScript 仅支持单继承，因此该方法只能调用一次。
+     * @param meta 基类的元信息
+     */
     template <typename P>
     auto& inherit(ClassMeta const& meta)
         requires isInstanceClass // 仅实例类允许继承
@@ -220,6 +229,33 @@ public:
         return *this;
     }
 
+    /**
+     * @brief 隐式接口实现 / 类型放行 (仅 C++ 侧可见)
+     * @note 此方法用于向 v8kit 类型系统声明 C++ 的继承关系，但不会修改 JavaScript 的原型链。
+     *
+     * @par 适用场景 1：隐藏 Trampoline (跳板类)
+     * 如果你为了支持 JS 重写虚函数，定义了 `class JSPlugin : public Plugin, public TrampolineBase`，
+     * 但你希望在 JS 侧直接暴露为 `class Plugin` 而非让 JS 看到奇怪的继承体系。
+     * 此时调用 `.implements<Plugin>()` 即可让系统知道如何把 JS 对象安全转换回 `Plugin*`。
+     *
+     * @par 适用场景 2：支持 C++ 多继承与接口
+     * JavaScript 只支持单继承。如果 C++ 类继承了多个接口 (例如 `class Entity : public Object, public IDamageable`)，
+     * 你可以使用 `.inherit<Object>(...)` 建立主继承链，同时使用 `.implements<IDamageable>()`
+     * 让需要 `IDamageable&` 的 C++ 函数能够正确接收并转换这个 JS 对象 (处理多继承指针偏移)。
+     *
+     * @tparam Target 需要向上转型的基类或接口类型
+     */
+    template <typename Target>
+    auto& implements()
+        requires isInstanceClass
+    {
+        static_assert(std::is_base_of_v<Target, T>, "Target must be a base class of T");
+        extraCasters_[std::type_index(typeid(Target))] = [](void* ptr) -> void* {
+            // 安全的指针偏移（处理多继承中的内存布局错位）
+            return static_cast<Target*>(static_cast<T*>(ptr));
+        };
+        return *this;
+    }
 
     auto& method(std::string name, InstanceMethodCallback fn)
         requires isInstanceClass
@@ -349,7 +385,8 @@ public:
             },
             base_,
             std::type_index{typeid(T)},
-            upcaster_
+            upcaster_,
+            std::move(extraCasters_)
         };
     }
 };

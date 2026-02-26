@@ -853,10 +853,9 @@ public:
     bool onLoad(Bootstrap const& boot) override { V8KIT_OVERRIDE(bool, Plugin, "onLoad", onLoad, std::ref(boot)); }
 };
 auto BootstrapMeta = defClass<Bootstrap>("Bootstrap").ctor<>().prop_readonly("pass", &Bootstrap::pass).build();
-auto PluginMeta    = defClass<Plugin>("PluginBase").ctor(nullptr).build();
 auto JSPluginMeta  = defClass<JSPlugin>("Plugin")
                         .ctor()
-                        .inherit<Plugin>(PluginMeta)
+                        .implements<Plugin>()
                         .method("onLoad", &JSPlugin::onLoad)
                         .method("onUnload", &JSPlugin::onUnload)
                         .build();
@@ -864,7 +863,6 @@ TEST_CASE_METHOD(BindingTestFixture, "enable_trampoline") {
     EngineScope scope{engine.get()};
 
     engine->registerClass(BootstrapMeta);
-    engine->registerClass(PluginMeta);
     engine->registerClass(JSPluginMeta);
 
     engine->globalThis().set(
