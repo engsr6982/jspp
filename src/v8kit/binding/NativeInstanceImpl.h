@@ -40,10 +40,11 @@ public:
     std::type_index type_id() const override { return std::type_index(typeid(std::remove_cv_t<ElementType>)); }
 
     enable_trampoline* get_trampoline() const override {
-        if constexpr (std::is_polymorphic_v<ElementType>) {
+        if constexpr (std::is_base_of_v<enable_trampoline, ElementType> && std::is_polymorphic_v<ElementType>) {
             return dynamic_cast<enable_trampoline*>(get_raw_ptr());
+        } else {
+            return nullptr;
         }
-        return nullptr;
     }
 
     bool is_expired() const override {
