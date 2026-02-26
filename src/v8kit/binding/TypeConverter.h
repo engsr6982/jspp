@@ -528,6 +528,16 @@ struct TypeConverter<std::reference_wrapper<T>> {
     }
 };
 
+template <>
+struct TypeConverter<std::filesystem::path> {
+    static Local<Value>
+    toJs(std::filesystem::path const& value, ReturnValuePolicy /* policy */, Local<Value> const& /* parent */) {
+        return String::newString(value.string());
+    }
+    static std::filesystem::path toCpp(Local<Value> const& value) { return {value.asString().getValue()}; }
+};
+
+
 // free functions
 template <typename T>
 Local<Value> toJs(T&& val) {
