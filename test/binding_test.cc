@@ -1,14 +1,14 @@
-#include "v8kit/binding/TypeConverter.h"
-#include "v8kit/core/Engine.h"
-#include "v8kit/core/EngineScope.h"
-#include "v8kit/core/Exception.h"
-#include "v8kit/core/MetaInfo.h"
-#include "v8kit/core/Reference.h"
-#include "v8kit/core/Trampoline.h"
-#include "v8kit/core/Value.h"
+#include "jspp/binding/TypeConverter.h"
+#include "jspp/core/Engine.h"
+#include "jspp/core/EngineScope.h"
+#include "jspp/core/Exception.h"
+#include "jspp/core/MetaInfo.h"
+#include "jspp/core/Reference.h"
+#include "jspp/core/Trampoline.h"
+#include "jspp/core/Value.h"
 
-#include "v8kit/binding/BindingUtils.h"
-#include "v8kit/binding/MetaBuilder.h"
+#include "jspp/binding/BindingUtils.h"
+#include "jspp/binding/MetaBuilder.h"
 
 #include "catch2/catch_test_macros.hpp"
 #include "catch2/matchers/catch_matchers.hpp"
@@ -19,8 +19,8 @@
 
 namespace ut {
 
-using namespace v8kit;
-using namespace v8kit::binding;
+using namespace jspp;
+using namespace jspp::binding;
 
 struct ScriptEvalAssertContext {
     inline static size_t                                 CurrentRunningLine    = 0;
@@ -762,7 +762,7 @@ TEST_CASE_METHOD(BindingTestFixture, "Polymorphism & Multiple inheritance safety
     REQUIRE_EVAL("getMIBase1().get3() === 300", "can call derived method because RTTI exposed full type");
 
     // 测试点：多继承的交叉/次级父类指针转型
-    // 即便返回的是次要基类指针(Base2*)，v8kit 也能基于 RTTI 将其定位到最底层子类 (MIDerived)
+    // 即便返回的是次要基类指针(Base2*)，jspp 也能基于 RTTI 将其定位到最底层子类 (MIDerived)
     // 并且通过 castTo 在底层完成偏移矫正，避免野指针崩溃。
     REQUIRE_EVAL("getMIBase2() instanceof MIDerived", "RTTI from secondary base safely downcasts to MIDerived");
     // 因为对象在 JS 中已被视作 MIDerived，而 MIDerived 继承自 MIBase1，
@@ -853,7 +853,7 @@ public:
     bool onLoad(Bootstrap const& boot) override {
         REQUIRE(getEngine() != nullptr);
         REQUIRE_FALSE(getThis().isNullOrUndefined());
-        V8KIT_OVERRIDE(bool, Plugin, "onLoad", onLoad, std::ref(boot));
+        JSPP_OVERRIDE(bool, Plugin, "onLoad", onLoad, std::ref(boot));
     }
 };
 auto BootstrapMeta = defClass<Bootstrap>("Bootstrap").ctor<>().prop_readonly("pass", &Bootstrap::pass).build();

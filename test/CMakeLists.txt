@@ -3,7 +3,7 @@
 if(WIN32)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-    set_target_properties(v8kit PROPERTIES
+    set_target_properties(jspp PROPERTIES
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
     )
 endif()
@@ -24,22 +24,22 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(Catch2)
 
 # ==============================================================================
-# Target: v8kit_test
+# Target: jspp_test
 # ==============================================================================
 file(GLOB_RECURSE TEST_FILES "*.cc")
-add_executable(v8kit_test ${TEST_FILES})
+add_executable(jspp_test ${TEST_FILES})
 
-target_link_libraries(v8kit_test PRIVATE v8kit Catch2::Catch2)
+target_link_libraries(jspp_test PRIVATE jspp Catch2::Catch2)
 
 set(V8_STATIC_LIB "" CACHE FILEPATH "Path to V8 static library")
 if(V8_STATIC_LIB AND EXISTS "${V8_STATIC_LIB}")
-    target_link_libraries(v8kit_test PRIVATE "${V8_STATIC_LIB}")
+    target_link_libraries(jspp_test PRIVATE "${V8_STATIC_LIB}")
 endif()
 
 if(WIN32)
-    target_link_libraries(v8kit_test PRIVATE winmm advapi32 dbghelp)
+    target_link_libraries(jspp_test PRIVATE winmm advapi32 dbghelp)
 
-    set_target_properties(v8kit_test PROPERTIES
+    set_target_properties(jspp_test PROPERTIES
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
     )
 endif()

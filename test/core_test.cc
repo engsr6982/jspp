@@ -1,29 +1,29 @@
-#include "v8kit/core/Engine.h"
-#include "v8kit/core/EngineScope.h"
-#include "v8kit/core/Exception.h"
-#include "v8kit/core/MetaInfo.h"
-#include "v8kit/core/Reference.h"
-#include "v8kit/core/Value.h"
+#include "jspp/core/Engine.h"
+#include "jspp/core/EngineScope.h"
+#include "jspp/core/Exception.h"
+#include "jspp/core/MetaInfo.h"
+#include "jspp/core/Reference.h"
+#include "jspp/core/Value.h"
 
 #include "catch2/catch_test_macros.hpp"
 #include "catch2/matchers/catch_matchers.hpp"
 #include "catch2/matchers/catch_matchers_exception.hpp"
 
 struct CoreTestFixture {
-    std::unique_ptr<v8kit::Engine> engine;
-    CoreTestFixture() { engine = std::make_unique<v8kit::Engine>(); }
+    std::unique_ptr<jspp::Engine> engine;
+    CoreTestFixture() { engine = std::make_unique<jspp::Engine>(); }
 };
 
 TEST_CASE_METHOD(CoreTestFixture, "Engine::eval") {
     REQUIRE(engine != nullptr);
 
-    v8kit::EngineScope scope(engine.get());
+    jspp::EngineScope scope(engine.get());
 
-    auto result = engine->eval(v8kit::String::newString("1 + 1"));
+    auto result = engine->eval(jspp::String::newString("1 + 1"));
     REQUIRE(result.isNumber());
     REQUIRE(result.asNumber().getInt32() == 2);
 
-    result = engine->eval(v8kit::String::newString("1 + '1'"));
+    result = engine->eval(jspp::String::newString("1 + '1'"));
     REQUIRE(result.isString());
     REQUIRE(result.asString().getValue() == "11");
 }
@@ -31,33 +31,33 @@ TEST_CASE_METHOD(CoreTestFixture, "Engine::eval") {
 
 class ScriptClass {
 public:
-    static v8kit::Local<v8kit::Value> foo(v8kit::Arguments const& arguments) { return v8kit::String::newString("foo"); }
-    static v8kit::Local<v8kit::Value> forward(v8kit::Arguments const& arguments) { return arguments[0]; }
+    static jspp::Local<jspp::Value> foo(jspp::Arguments const& arguments) { return jspp::String::newString("foo"); }
+    static jspp::Local<jspp::Value> forward(jspp::Arguments const& arguments) { return arguments[0]; }
 
-    inline static std::string         name{"123"};
-    static v8kit::Local<v8kit::Value> getter() { return v8kit::String::newString(name); }
-    static void                       setter(v8kit::Local<v8kit::Value> const& value) {
+    inline static std::string       name{"123"};
+    static jspp::Local<jspp::Value> getter() { return jspp::String::newString(name); }
+    static void                     setter(jspp::Local<jspp::Value> const& value) {
         if (value.isString()) {
             name = value.asString().getValue();
         }
     }
 };
 TEST_CASE_METHOD(CoreTestFixture, "registerClass") {
-    v8kit::EngineScope scope{engine.get()};
+    jspp::EngineScope scope{engine.get()};
 
     // clang-format off
-    static auto meta = v8kit::ClassMeta{
+    static auto meta = jspp::ClassMeta{
         "ScriptClass",
-        v8kit::StaticMemberMeta{
+        jspp::StaticMemberMeta{
             {
-                v8kit::StaticMemberMeta::Property{"name", &ScriptClass::getter, &ScriptClass::setter},
+                jspp::StaticMemberMeta::Property{"name", &ScriptClass::getter, &ScriptClass::setter},
             },
             {
-                v8kit::StaticMemberMeta::Function{"foo", &ScriptClass::foo},
-                v8kit::StaticMemberMeta::Function{"forward", &ScriptClass::forward}
+                jspp::StaticMemberMeta::Function{"foo", &ScriptClass::foo},
+                jspp::StaticMemberMeta::Function{"forward", &ScriptClass::forward}
             },
         },
-        v8kit::InstanceMemberMeta{
+        jspp::InstanceMemberMeta{
             nullptr,
             {},
             {},
@@ -71,21 +71,21 @@ TEST_CASE_METHOD(CoreTestFixture, "registerClass") {
 
     engine->registerClass(meta);
 
-    auto result = engine->eval(v8kit::String::newString("ScriptClass.foo()"));
+    auto result = engine->eval(jspp::String::newString("ScriptClass.foo()"));
     REQUIRE(result.isString());
     REQUIRE(result.asString().getValue() == "foo");
 
-    result = engine->eval(v8kit::String::newString("ScriptClass.forward('bar')"));
+    result = engine->eval(jspp::String::newString("ScriptClass.forward('bar')"));
     REQUIRE(result.isString());
     REQUIRE(result.asString().getValue() == "bar");
 
-    engine->eval(v8kit::String::newString("ScriptClass.name = 'bar'"));
-    result = engine->eval(v8kit::String::newString("ScriptClass.name"));
+    engine->eval(jspp::String::newString("ScriptClass.name = 'bar'"));
+    result = engine->eval(jspp::String::newString("ScriptClass.name"));
     REQUIRE(result.isString());
     REQUIRE(result.asString().getValue() == "bar");
 
     // ensure toStringTag
-    result = engine->eval(v8kit::String::newString("Object.prototype.toString.call(ScriptClass)"));
+    result = engine->eval(jspp::String::newString("Object.prototype.toString.call(ScriptClass)"));
     REQUIRE(result.isString());
     REQUIRE(result.asString().getValue() == "[object ScriptClass]");
 }
@@ -93,82 +93,82 @@ TEST_CASE_METHOD(CoreTestFixture, "registerClass") {
 
 enum class Color { Red, Green, Blue };
 TEST_CASE_METHOD(CoreTestFixture, "registerEnum") {
-    v8kit::EngineScope scope{engine.get()};
+    jspp::EngineScope scope{engine.get()};
 
-    static auto meta = v8kit::EnumMeta{
+    static auto meta = jspp::EnumMeta{
         "Color",
         {
-          v8kit::EnumMeta::Entry{"Red", static_cast<int64_t>(Color::Red)},
-          v8kit::EnumMeta::Entry{"Green", static_cast<int64_t>(Color::Green)},
-          v8kit::EnumMeta::Entry{"Blue", static_cast<int64_t>(Color::Blue)},
+          jspp::EnumMeta::Entry{"Red", static_cast<int64_t>(Color::Red)},
+          jspp::EnumMeta::Entry{"Green", static_cast<int64_t>(Color::Green)},
+          jspp::EnumMeta::Entry{"Blue", static_cast<int64_t>(Color::Blue)},
           }
     };
 
     engine->registerEnum(meta);
 
-    auto result = engine->eval(v8kit::String::newString("Color.$name"));
+    auto result = engine->eval(jspp::String::newString("Color.$name"));
     REQUIRE(result.isString());
     REQUIRE(result.asString().getValue() == "Color");
 
-    result = engine->eval(v8kit::String::newString("Color.Red"));
+    result = engine->eval(jspp::String::newString("Color.Red"));
     REQUIRE(result.isNumber());
     REQUIRE(result.asNumber().getInt32() == static_cast<int64_t>(Color::Red));
 
-    result = engine->eval(v8kit::String::newString("Color.Green"));
+    result = engine->eval(jspp::String::newString("Color.Green"));
     REQUIRE(result.isNumber());
     REQUIRE(result.asNumber().getInt32() == static_cast<int64_t>(Color::Green));
 
-    result = engine->eval(v8kit::String::newString("Color.Blue"));
+    result = engine->eval(jspp::String::newString("Color.Blue"));
     REQUIRE(result.isNumber());
     REQUIRE(result.asNumber().getInt32() == static_cast<int64_t>(Color::Blue));
 
     // ensure toStringTag
-    result = engine->eval(v8kit::String::newString("Object.prototype.toString.call(Color)"));
+    result = engine->eval(jspp::String::newString("Object.prototype.toString.call(Color)"));
     REQUIRE(result.isString());
     REQUIRE(result.asString().getValue() == "[object Color]");
 
     // ensure $name don't enumerate
-    auto ensure = v8kit::Function::newFunction([](v8kit::Arguments const& arguments) -> v8kit::Local<v8kit::Value> {
+    auto ensure = jspp::Function::newFunction([](jspp::Arguments const& arguments) -> jspp::Local<jspp::Value> {
         REQUIRE(arguments.length() == 1);
         REQUIRE(arguments[0].isString());
         REQUIRE(arguments[0].asString().getValue() != "$name");
         return {};
     });
-    engine->globalThis().set(v8kit::String::newString("ensure"), ensure);
-    engine->eval(v8kit::String::newString("for (let key in Color) { ensure(key) }"));
+    engine->globalThis().set(jspp::String::newString("ensure"), ensure);
+    engine->eval(jspp::String::newString("for (let key in Color) { ensure(key) }"));
 }
 
 
 TEST_CASE_METHOD(CoreTestFixture, "Exception pass-through") {
-    v8kit::EngineScope scope{engine.get()};
+    jspp::EngineScope scope{engine.get()};
 
     REQUIRE_THROWS_MATCHES(
-        engine->eval(v8kit::String::newString("throw new Error('abc')")),
-        v8kit::Exception,
+        engine->eval(jspp::String::newString("throw new Error('abc')")),
+        jspp::Exception,
         Catch::Matchers::Message("Uncaught Error: abc")
     );
 
     static constexpr auto msg = "Cpp layer throw exception";
-    auto thowr  = v8kit::Function::newFunction([](v8kit::Arguments const& arguments) -> v8kit::Local<v8kit::Value> {
-        throw v8kit::Exception{msg};
+    auto thowr  = jspp::Function::newFunction([](jspp::Arguments const& arguments) -> jspp::Local<jspp::Value> {
+        throw jspp::Exception{msg};
     });
-    auto ensure = v8kit::Function::newFunction([](v8kit::Arguments const& arguments) -> v8kit::Local<v8kit::Value> {
+    auto ensure = jspp::Function::newFunction([](jspp::Arguments const& arguments) -> jspp::Local<jspp::Value> {
         REQUIRE(arguments.length() == 1);
         REQUIRE(arguments[0].isString());
         REQUIRE(arguments[0].asString().getValue() == msg);
         return {};
     });
-    engine->globalThis().set(v8kit::String::newString("throwr"), thowr);
-    engine->globalThis().set(v8kit::String::newString("ensure"), ensure);
+    engine->globalThis().set(jspp::String::newString("throwr"), thowr);
+    engine->globalThis().set(jspp::String::newString("ensure"), ensure);
 
-    engine->eval(v8kit::String::newString("try { throwr() } catch (e) { ensure(e.message) }"));
+    engine->eval(jspp::String::newString("try { throwr() } catch (e) { ensure(e.message) }"));
 }
 
 
 TEST_CASE("Local<T> via Engine::eval - Boolean") {
-    using namespace v8kit;
+    using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
-    EngineScope enter{engine.get()};
+    EngineScope             enter{engine.get()};
 
     auto bTrue  = engine->eval(String::newString("true"));
     auto bFalse = engine->eval(String::newString("false"));
@@ -181,9 +181,9 @@ TEST_CASE("Local<T> via Engine::eval - Boolean") {
 }
 
 TEST_CASE("Local<T> via Engine::eval - Number") {
-    using namespace v8kit;
+    using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
-    EngineScope enter{engine.get()};
+    EngineScope             enter{engine.get()};
 
     auto n = engine->eval(String::newString("42"));
     REQUIRE(n.isNumber());
@@ -191,9 +191,9 @@ TEST_CASE("Local<T> via Engine::eval - Number") {
 }
 
 TEST_CASE("Local<T> via Engine::eval - String") {
-    using namespace v8kit;
+    using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
-    EngineScope enter{engine.get()};
+    EngineScope             enter{engine.get()};
 
     auto s = engine->eval(String::newString("'hello'"));
     REQUIRE(s.isString());
@@ -202,9 +202,9 @@ TEST_CASE("Local<T> via Engine::eval - String") {
 }
 
 TEST_CASE("Local<T> via Engine::eval - Null & Undefined") {
-    using namespace v8kit;
+    using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
-    EngineScope enter{engine.get()};
+    EngineScope             enter{engine.get()};
 
     auto n = engine->eval(String::newString("null"));
     auto u = engine->eval(String::newString("undefined"));
@@ -216,9 +216,9 @@ TEST_CASE("Local<T> via Engine::eval - Null & Undefined") {
 }
 
 TEST_CASE("Local<T> via Engine::eval - BigInt") {
-    using namespace v8kit;
+    using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
-    EngineScope enter{engine.get()};
+    EngineScope             enter{engine.get()};
 
     auto bi = engine->eval(String::newString("1234567890123456789n"));
     REQUIRE(bi.isBigInt());
@@ -226,9 +226,9 @@ TEST_CASE("Local<T> via Engine::eval - BigInt") {
 }
 
 TEST_CASE("Local<T> via Engine::eval - Symbol") {
-    using namespace v8kit;
+    using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
-    EngineScope enter{engine.get()};
+    EngineScope             enter{engine.get()};
 
     auto s = engine->eval(String::newString("Symbol('desc')"));
     REQUIRE(s.isSymbol());
@@ -238,9 +238,9 @@ TEST_CASE("Local<T> via Engine::eval - Symbol") {
 }
 
 TEST_CASE("Local<T> via Engine::eval - Object") {
-    using namespace v8kit;
+    using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
-    EngineScope enter{engine.get()};
+    EngineScope             enter{engine.get()};
 
     auto obj = engine->eval(String::newString("({foo: 123, bar: 'abc'})"));
     REQUIRE(obj.isObject());
@@ -258,9 +258,9 @@ TEST_CASE("Local<T> via Engine::eval - Object") {
 }
 
 TEST_CASE("Local<T> via Engine::eval - Array") {
-    using namespace v8kit;
+    using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
-    EngineScope enter{engine.get()};
+    EngineScope             enter{engine.get()};
 
     auto arr = engine->eval(String::newString("[1,2,3]"));
     REQUIRE(arr.isArray());
@@ -271,9 +271,9 @@ TEST_CASE("Local<T> via Engine::eval - Array") {
 }
 
 TEST_CASE("Local<T> via Engine::eval - Function") {
-    using namespace v8kit;
+    using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
-    EngineScope enter{engine.get()};
+    EngineScope             enter{engine.get()};
 
     auto fn = engine->eval(String::newString("(function(x){return x+1;})"));
     REQUIRE(fn.isFunction());
@@ -299,9 +299,9 @@ TEST_CASE("Local<T> via Engine::eval - Function") {
 }
 
 TEST_CASE("Local<T> via Engine::eval - as<T> conversion") {
-    using namespace v8kit;
+    using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
-    EngineScope enter{engine.get()};
+    EngineScope             enter{engine.get()};
 
     auto          n   = engine->eval(String::newString("99"));
     Local<Value>  v   = n.asValue();
@@ -310,9 +310,9 @@ TEST_CASE("Local<T> via Engine::eval - as<T> conversion") {
 }
 
 TEST_CASE("Local<T> via Engine::eval - operator== and clear") {
-    using namespace v8kit;
+    using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
-    EngineScope enter{engine.get()};
+    EngineScope             enter{engine.get()};
 
     auto n1 = engine->eval(String::newString("10"));
     auto n2 = engine->eval(String::newString("10"));

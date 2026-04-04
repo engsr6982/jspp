@@ -29,11 +29,11 @@ option("v8_static_lib")
 option_end()
 
 
-target("v8kit")
+target("jspp")
     set_kind("static")
     add_files("src/**.cc")
     add_includedirs("src")
-    add_headerfiles("src/(v8kit/**.h)", "src/(v8kit/**.inl)")
+    add_headerfiles("src/(jspp/**.h)", "src/(jspp/**.inl)")
     set_languages("cxx20")
     set_symbols("debug")
 
@@ -63,7 +63,7 @@ target("v8kit")
     end
 
     if is_mode("debug") then
-        add_defines("V8KIT_DEBUG")
+        add_defines("JSPP_DEBUG")
     end
 
     after_build(function (target)

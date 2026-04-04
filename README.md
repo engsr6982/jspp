@@ -1,27 +1,27 @@
-# v8kit 🚀
+# jspp 🚀
 
 **[English](./README.md)** | **[简体中文](./README_ZH.md)**
 
 ---
 
-**v8kit** is a modern C++ wrapper for the Google V8 engine. Inspired by `pybind11`, it aims to eliminate the massive
+**jspp** is a modern C++ wrapper for the Google V8 engine. Inspired by `pybind11`, it aims to eliminate the massive
 boilerplate required when integrating C++ with V8.
 
-With v8kit, you can expose C++ classes, standard library containers, and smart pointers to JavaScript safely and
+With jspp, you can expose C++ classes, standard library containers, and smart pointers to JavaScript safely and
 fluently without dealing with V8's complex underlying APIs (like `v8::Isolate`, `v8::Local`, or internal field slots)
 manually.
 
 ## ✨ Features
 
-* **pybind11-style Fluent API**: Declare JS bindings in pure, clean C++ using `defClass` and `defEnum`.
-* **Seamless Type Conversions**: Out-of-the-box support for `std::vector`, `std::unordered_map`, `std::optional`,
+- **pybind11-style Fluent API**: Declare JS bindings in pure, clean C++ using `defClass` and `defEnum`.
+- **Seamless Type Conversions**: Out-of-the-box support for `std::vector`, `std::unordered_map`, `std::optional`,
   `std::variant`, `std::string`, and more.
-* **Smart Pointers & Lifetimes**: Full support for `std::shared_ptr`, `std::unique_ptr`, `std::weak_ptr`.
-* **Advanced Memory Management**: Powerful `ReturnValuePolicy` system (kCopy, kReference, kTakeOwnership,
+- **Smart Pointers & Lifetimes**: Full support for `std::shared_ptr`, `std::unique_ptr`, `std::weak_ptr`.
+- **Advanced Memory Management**: Powerful `ReturnValuePolicy` system (kCopy, kReference, kTakeOwnership,
   kReferenceInternal) to prevent memory leaks and Use-After-Free.
-* **OOP Support**: Native support for single/multiple inheritance, polymorphism (RTTI downcasting), and
+- **OOP Support**: Native support for single/multiple inheritance, polymorphism (RTTI downcasting), and
   interface/abstract classes.
-* **Callback Safety**: `std::function` mapping with `TransientObjectScope` ensures safe JS-to-C++ callbacks without
+- **Callback Safety**: `std::function` mapping with `TransientObjectScope` ensures safe JS-to-C++ callbacks without
   closure escape crashes.
 
 ## 🚀 Quick Start
@@ -29,9 +29,9 @@ manually.
 Here's how easily you can bind a C++ class to V8:
 
 ```cpp
-#include "v8kit/core/Engine.h"
-#include "v8kit/core/EngineScope.h"
-#include "v8kit/binding/MetaBuilder.h"
+#include "jspp/core/Engine.h"
+#include "jspp/core/EngineScope.h"
+#include "jspp/binding/MetaBuilder.h"
 
 // 1. Define your C++ class
 class Pet {
@@ -44,7 +44,7 @@ public:
 };
 
 // 2. Create bindings using pybind11-style API
-using namespace v8kit::binding;
+using namespace jspp::binding;
 auto PetMeta = defClass<Pet>("Pet")
     .ctor<std::string>()
     .prop("name", &Pet::getName, &Pet::setName)
@@ -53,19 +53,19 @@ auto PetMeta = defClass<Pet>("Pet")
 
 // 3. Run it in the Engine!
 int main() {
-    v8kit::Engine engine;
-    v8kit::EngineScope scope(engine);
-    
+    jspp::Engine engine;
+    jspp::EngineScope scope(engine);
+
     // Register the bound class
     engine.registerClass(PetMeta);
-    
+
     // Execute JavaScript code
-    auto result = engine.eval(v8kit::String::newString(R"(
+    auto result = engine.eval(jspp::String::newString(R"(
         let dog = new Pet("Buddy");
         dog.name = "Max"; // Triggers setName
         dog.bark(3);      // Returns "Max barked 3 times!"
     )"));
-    
+
     std::cout << result.asString().getValue() << std::endl;
     return 0;
 }
@@ -73,19 +73,19 @@ int main() {
 
 ## 🧠 Advanced: Return Value Policies
 
-Just like pybind11, v8kit provides fine-grained control over object lifetimes when passing C++ objects to JavaScript:
+Just like pybind11, jspp provides fine-grained control over object lifetimes when passing C++ objects to JavaScript:
 
-* `kAutomatic` (Default)
-* `kReference` (C++ manages memory, JS just holds a reference)
-* `kCopy` (JS gets a copied instance)
-* `kTakeOwnership` (JS GC will delete the C++ object)
-* `kReferenceInternal` (Ties the child's lifetime to the parent's lifetime)
+- `kAutomatic` (Default)
+- `kReference` (C++ manages memory, JS just holds a reference)
+- `kCopy` (JS gets a copied instance)
+- `kTakeOwnership` (JS GC will delete the C++ object)
+- `kReferenceInternal` (Ties the child's lifetime to the parent's lifetime)
 
 ## 🔨 Building
 
-v8kit is built with CMake or XMake. To build, run:
+jspp is built with CMake or XMake. To build, run:
 
-### Build v8kit only
+### Build jspp only
 
 > **Note**: You need provide the path to your V8 include directory.
 
@@ -107,7 +107,7 @@ xmake f --v8_include_dir=/patch/to/v8
 xmake
 ```
 
-### Build v8kit with testing
+### Build jspp with testing
 
 > **Note**: You need to build **v8 monolith lib** and provide the path to it.
 
@@ -119,7 +119,7 @@ cmake -B build -S . \
     -DCMAKE_BUILD_TYPE=Debug \
     -DV8_INCLUDE_DIR=/path/to/v8/include \
     -DV8_STATIC_LIB=/path/to/v8/v8_monolith.a \
-    -DV8KIT_BUILD_TESTS=ON
+    -DJSPP_BUILD_TESTS=ON
 
 cmake --build build --config Debug
 ```

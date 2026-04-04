@@ -1,4 +1,4 @@
-#include "v8kit/binding/TypeConverter.h"
+#include "jspp/binding/TypeConverter.h"
 
 #include "catch2/catch_test_macros.hpp"
 #include <catch2/catch_approx.hpp>
@@ -10,10 +10,10 @@
 #include <vector>
 
 TEST_CASE("TypeConverter full test") {
-    auto               engine = std::make_unique<v8kit::Engine>();
-    v8kit::EngineScope enter{engine.get()};
+    auto              engine = std::make_unique<jspp::Engine>();
+    jspp::EngineScope enter{engine.get()};
 
-    using namespace v8kit::binding;
+    using namespace jspp::binding;
 
     // ----------------------------
     // bool

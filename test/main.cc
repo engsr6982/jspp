@@ -1,14 +1,14 @@
-#include "v8kit/Macro.h"
+#include "jspp/Macro.h"
 
 #include <catch2/catch_session.hpp>
 
-V8KIT_WARNING_GUARD_BEGIN
+JSPP_WARNING_GUARD_BEGIN
 #include <libplatform/libplatform-export.h>
 #include <libplatform/libplatform.h>
 #include <libplatform/v8-tracing.h>
 #include <v8-initialization.h>
 #include <v8-platform.h>
-V8KIT_WARNING_GUARD_END
+JSPP_WARNING_GUARD_END
 
 int main(int argc, char* argv[]) {
     auto plat = v8::platform::NewDefaultPlatform(1);
