@@ -10,7 +10,7 @@
 使用 v8kit，你无需直接面对 V8 复杂的底层概念（如各种 Handle、Isolate、Context 或内存槽），就能以极其优雅和安全的方式将 C++
 类、STL 容器、智能指针暴露给 JavaScript。
 
-### ✨ 核心特性
+## ✨ 核心特性
 
 * **类似 pybind11 的链式 API**：使用 `defClass` 和 `defEnum` 极速声明绑定关系。
 * **无缝类型转换**：开箱即用支持 `std::vector`, `std::unordered_map`, `std::optional`, `std::variant`, `std::string` 等。
@@ -20,7 +20,7 @@
 * **面向对象支持**：原生支持继承链、多重继承、多态（RTTI 自动向下转型）及抽象类。
 * **回调安全**：针对 `std::function` 提供了 `TransientObjectScope` 瞬态作用域保护，彻底阻断 JS 闭包逃逸导致的宿主崩溃问题。
 
-### 🚀 快速开始
+## 🚀 快速开始
 
 只需几行代码，即可将 C++ 类注册到 JS 世界：
 
@@ -67,7 +67,7 @@ int main() {
 }
 ```
 
-### 🧠 进阶：返回值策略 (Return Value Policy)
+## 🧠 进阶：返回值策略 (Return Value Policy)
 
 同 pybind11 一样，当 C++ 向 JS 传递复杂对象时，v8kit 提供了精细的生命周期控制：
 
@@ -76,3 +76,53 @@ int main() {
 * `kCopy` (拷贝一个新的对象给 JS)
 * `kTakeOwnership` (JS 接管所有权，当 JS 触发 GC 时会自动析构 C++ 对象)
 * `kReferenceInternal` (子对象的生命周期与父对象绑定，保活机制)
+
+## 🔨 构建
+
+v8kit 支持使用 CMake 或 XMake 进行构建。
+
+### 仅构建 v8kit
+
+> **Note**: 你需要提供 v8 的头文件路径。
+
+#### 使用 CMake
+
+```sh
+mkdir build
+cmake -B build -S . \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DV8_INCLUDE_DIR=/path/to/v8/include
+
+cmake --build build --config Release
+```
+
+#### 使用 XMake
+
+```sh
+xmake f --v8_include_dir=/patch/to/v8
+xmake
+```
+
+### 构建 v8kit 和测试集
+
+> **Note**: 你需要提供 v8 的头文件路径和静态库路径。
+
+#### 使用 CMake
+
+```sh
+mkdir build
+cmake -B build -S . \
+    -DCMAKE_BUILD_TYPE=Debug \
+    -DV8_INCLUDE_DIR=/path/to/v8/include \
+    -DV8_STATIC_LIB=/path/to/v8/v8_monolith.a \
+    -DV8KIT_BUILD_TESTS=ON
+
+cmake --build build --config Debug
+```
+
+#### 使用 XMake
+
+```sh
+xmake f --v8_include_dir=/patch/to/v8 --v8_static_lib=/path/to/v8/v8_monolith --test=y
+xmake
+```

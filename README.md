@@ -11,7 +11,7 @@ With v8kit, you can expose C++ classes, standard library containers, and smart p
 fluently without dealing with V8's complex underlying APIs (like `v8::Isolate`, `v8::Local`, or internal field slots)
 manually.
 
-### ✨ Features
+## ✨ Features
 
 * **pybind11-style Fluent API**: Declare JS bindings in pure, clean C++ using `defClass` and `defEnum`.
 * **Seamless Type Conversions**: Out-of-the-box support for `std::vector`, `std::unordered_map`, `std::optional`,
@@ -24,7 +24,7 @@ manually.
 * **Callback Safety**: `std::function` mapping with `TransientObjectScope` ensures safe JS-to-C++ callbacks without
   closure escape crashes.
 
-### 🚀 Quick Start
+## 🚀 Quick Start
 
 Here's how easily you can bind a C++ class to V8:
 
@@ -71,7 +71,7 @@ int main() {
 }
 ```
 
-### 🧠 Advanced: Return Value Policies
+## 🧠 Advanced: Return Value Policies
 
 Just like pybind11, v8kit provides fine-grained control over object lifetimes when passing C++ objects to JavaScript:
 
@@ -80,3 +80,53 @@ Just like pybind11, v8kit provides fine-grained control over object lifetimes wh
 * `kCopy` (JS gets a copied instance)
 * `kTakeOwnership` (JS GC will delete the C++ object)
 * `kReferenceInternal` (Ties the child's lifetime to the parent's lifetime)
+
+## 🔨 Building
+
+v8kit is built with CMake or XMake. To build, run:
+
+### Build v8kit only
+
+> **Note**: You need provide the path to your V8 include directory.
+
+#### Using CMake
+
+```sh
+mkdir build
+cmake -B build -S . \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DV8_INCLUDE_DIR=/path/to/v8/include
+
+cmake --build build --config Release
+```
+
+#### Using XMake
+
+```sh
+xmake f --v8_include_dir=/patch/to/v8
+xmake
+```
+
+### Build v8kit with testing
+
+> **Note**: You need to build **v8 monolith lib** and provide the path to it.
+
+#### Using CMake
+
+```sh
+mkdir build
+cmake -B build -S . \
+    -DCMAKE_BUILD_TYPE=Debug \
+    -DV8_INCLUDE_DIR=/path/to/v8/include \
+    -DV8_STATIC_LIB=/path/to/v8/v8_monolith.a \
+    -DV8KIT_BUILD_TESTS=ON
+
+cmake --build build --config Debug
+```
+
+#### Using XMake
+
+```sh
+xmake f --v8_include_dir=/patch/to/v8 --v8_static_lib=/path/to/v8/v8_monolith --test=y
+xmake
+```
