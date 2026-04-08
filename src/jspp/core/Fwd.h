@@ -1,11 +1,6 @@
 #pragma once
 #include <functional>
-
-#include "jspp/Macro.h"
-
-JSPP_WARNING_GUARD_BEGIN
-#include <v8-function.h>
-JSPP_WARNING_GUARD_END
+#include <memory>
 
 
 namespace jspp {
@@ -31,6 +26,8 @@ class Array;
 
 class Arguments;
 
+// handle
+
 template <typename>
 class Local;
 
@@ -40,14 +37,44 @@ class Global;
 template <typename>
 class Weak;
 
-using PropertyAttribute  = v8::PropertyAttribute;
-using PropertyDescriptor = v8::PropertyDescriptor;
+
+// scope
+class EngineScope;
+class ExitEngineScope;
+class TransientObjectScope;
+class StackFrameScope;
+
+class Exception;
+enum class ExceptionType {
+    Unknown = -1, // JavaScript 侧抛出的异常为 Unknown
+    Error,
+    RangeError,
+    ReferenceError,
+    SyntaxError,
+    TypeError
+};
 
 
+// attribute
+enum class PropertyAttribute : uint32_t {
+    /** None. **/
+    None = 0,
+    /** ReadOnly, i.e., not writable. **/
+    ReadOnly = 1 << 0,
+    /** DontEnum, i.e., not enumerable. **/
+    DontEnum = 1 << 1,
+    /** DontDelete, i.e., not configurable. **/
+    DontDelete = 1 << 2
+};
+
+// todo: remove or implement it (need support multi backend)
+// using PropertyDescriptor = v8::PropertyDescriptor;
+
+
+// abstract layer
 using FunctionCallback = std::function<Local<Value>(Arguments const& args)>;
 using GetterCallback   = std::function<Local<Value>()>;
 using SetterCallback   = std::function<void(Local<Value> const& value)>;
-
 
 struct InstancePayload;
 class NativeInstance;
@@ -56,6 +83,18 @@ using InstanceMethodCallback = std::function<Local<Value>(InstancePayload&, Argu
 using InstanceGetterCallback = std::function<Local<Value>(InstancePayload&, Arguments const& args)>;
 using InstanceSetterCallback = std::function<void(InstancePayload&, Arguments const& args)>;
 
+
+namespace internal {
+
+/**
+ * Multi Backend Implementation
+ */
+template <typename T>
+struct ImplType {
+    // using type = <impl>;
+};
+
+} // namespace internal
 
 } // namespace jspp
 

@@ -1,3 +1,4 @@
+#include "jspp/Jspp.h"
 #include "jspp/binding/TypeConverter.h"
 #include "jspp/core/Engine.h"
 #include "jspp/core/EngineScope.h"
@@ -6,6 +7,7 @@
 #include "jspp/core/Reference.h"
 #include "jspp/core/Trampoline.h"
 #include "jspp/core/Value.h"
+
 
 #include "jspp/binding/BindingUtils.h"
 #include "jspp/binding/MetaBuilder.h"
@@ -66,7 +68,7 @@ struct BindingTestFixture {
     {                                                                                                                  \
         ScriptEvalAssertContext::CurrentRunningLine    = __LINE__;                                                     \
         ScriptEvalAssertContext::CurrentScriptEvalCode = MOUNT_FUNC_NAME "(" COND ", `" MSG "`)";                      \
-        engine->eval(String::newString(ScriptEvalAssertContext::CurrentScriptEvalCode));                               \
+        engine->evalScript(String::newString(ScriptEvalAssertContext::CurrentScriptEvalCode));                         \
         ScriptEvalAssertContext::handler->complete();                                                                  \
         ScriptEvalAssertContext::handler.reset();                                                                      \
     }
@@ -143,24 +145,24 @@ TEST_CASE_METHOD(BindingTestFixture, "Static class") {
     engine->registerClass(StaticClassMeta);
 
     // .func
-    auto result = engine->eval(String::newString("StaticClass.add(1, 2)"));
+    auto result = engine->evalScript(String::newString("StaticClass.add(1, 2)"));
     REQUIRE(result.isNumber());
     REQUIRE(result.asNumber().getInt32() == 3);
 
-    result = engine->eval(String::newString("StaticClass.add2(1, 2)"));
+    result = engine->evalScript(String::newString("StaticClass.add2(1, 2)"));
     REQUIRE(result.isNumber());
     REQUIRE(result.asNumber().getInt32() == 3);
 
-    result = engine->eval(String::newString("StaticClass.append('hello', 'world')"));
+    result = engine->evalScript(String::newString("StaticClass.append('hello', 'world')"));
     REQUIRE(result.isString());
     REQUIRE(result.asString().getValue() == "helloworld");
 
-    result = engine->eval(String::newString("StaticClass.append('hello', 123)"));
+    result = engine->evalScript(String::newString("StaticClass.append('hello', 123)"));
     REQUIRE(result.isString());
     REQUIRE(result.asString().getValue() == "hello123");
 
     REQUIRE_THROWS_MATCHES(
-        engine->eval(String::newString("StaticClass.append(123, 'world')")),
+        engine->evalScript(String::newString("StaticClass.append(123, 'world')")),
         Exception,
         Catch::Matchers::Message("Uncaught TypeError: no overload found")
     );
@@ -168,21 +170,21 @@ TEST_CASE_METHOD(BindingTestFixture, "Static class") {
 
     // .var
     // test for GetterCallback and SetterCallback
-    engine->eval(String::newString("StaticClass.script_name = 'new name'"));
+    engine->evalScript(String::newString("StaticClass.script_name = 'new name'"));
     REQUIRE(StaticClass::name == "new name");
     REQUIRE_EVAL("StaticClass.script_name == 'new name'", "${StaticClass.script_name}")
 
     // test for wrap native Getter & Setter
     StaticClass::name = "test";
     REQUIRE_EVAL("StaticClass.native_name == 'test'", "${StaticClass.native_name}")
-    engine->eval(String::newString("StaticClass.native_name = 'foo'"));
+    engine->evalScript(String::newString("StaticClass.native_name = 'foo'"));
     REQUIRE_EVAL("StaticClass.native_name == 'foo'", "${StaticClass.native_name}")
     REQUIRE(StaticClass::name == "foo");
 
     // test for auto gen getter & setter
     StaticClass::name = "test";
     REQUIRE_EVAL("StaticClass.auto_name == 'test'", "${StaticClass.auto_name}")
-    engine->eval(String::newString("StaticClass.auto_name = 'foo'"));
+    engine->evalScript(String::newString("StaticClass.auto_name = 'foo'"));
     REQUIRE_EVAL("StaticClass.auto_name == 'foo'", "${StaticClass.auto_name}")
     REQUIRE(StaticClass::name == "foo");
 
@@ -247,7 +249,7 @@ TEST_CASE_METHOD(BindingTestFixture, "Disallow script constructor and verify rea
 
     // 不允许脚本构造
     REQUIRE_THROWS_MATCHES(
-        engine->eval(String::newString("new DisableCtorSimpleClass()")),
+        engine->evalScript(String::newString("new DisableCtorSimpleClass()")),
         Exception,
         Catch::Matchers::Message("Uncaught Error: This native class cannot be constructed.")
     );
@@ -256,7 +258,7 @@ TEST_CASE_METHOD(BindingTestFixture, "Disallow script constructor and verify rea
     REQUIRE_EVAL("DisableCtorSimpleClass.inst.getName() == 'hello'", "initial name check");
 
     // 确认引用语义
-    engine->eval(String::newString(R"(
+    engine->evalScript(String::newString(R"(
         let obj = DisableCtorSimpleClass.inst;
         obj.setName("world");
     )"));
@@ -266,7 +268,7 @@ TEST_CASE_METHOD(BindingTestFixture, "Disallow script constructor and verify rea
 
     REQUIRE_EVAL("DisableCtorSimpleClass.inst.getName() == 'world'", "modified name check");
 
-    REQUIRE_NOTHROW(engine->eval(String::newString(R"(
+    REQUIRE_NOTHROW(engine->evalScript(String::newString(R"(
         DisableCtorSimpleClass.inst.setId(123456);
     )")));
     REQUIRE(cpp_instance.getId() == 123456);
@@ -274,7 +276,7 @@ TEST_CASE_METHOD(BindingTestFixture, "Disallow script constructor and verify rea
 
     // 确认 const 语义被保留
     REQUIRE_THROWS_MATCHES(
-        engine->eval(String::newString("DisableCtorSimpleClass.inst_const.setId(123456);")),
+        engine->evalScript(String::newString("DisableCtorSimpleClass.inst_const.setId(123456);")),
         Exception,
         Catch::Matchers::Message("Uncaught Error: Cannot unwrap const instance to mutable pointer")
     );
@@ -303,7 +305,7 @@ TEST_CASE_METHOD(BindingTestFixture, "bind overload constructor") {
         "call SimpleClass constructor with 2 arguments"
     );
     REQUIRE_THROWS_MATCHES(
-        engine->eval(String::newString("new BindCtorSimpleClass()")),
+        engine->evalScript(String::newString("new BindCtorSimpleClass()")),
         Exception,
         Catch::Matchers::Message("Uncaught Error: This native class cannot be constructed.")
     );
@@ -340,7 +342,7 @@ TEST_CASE_METHOD(BindingTestFixture, "bind custom constructor") {
         "call SimpleClass constructor with 2 arguments"
     );
     REQUIRE_THROWS_MATCHES(
-        engine->eval(String::newString("new CustomCtorSimpleClass()")),
+        engine->evalScript(String::newString("new CustomCtorSimpleClass()")),
         Exception,
         Catch::Matchers::Message("Uncaught Error: This native class cannot be constructed.")
     );
@@ -379,7 +381,7 @@ TEST_CASE_METHOD(BindingTestFixture, "overload and builder mode compatibility") 
     engine->registerClass(MessageStreamMeta);
 
     REQUIRE_NOTHROW(
-        engine->eval(String::newString("new MessageStream().write('hello').write(123).str() == 'hello123'"))
+        engine->evalScript(String::newString("new MessageStream().write('hello').write(123).str() == 'hello123'"))
     );
 
     REQUIRE_EVAL("new MessageStream().write('test').str() == 'test'", "string overload check");
@@ -414,7 +416,7 @@ TEST_CASE_METHOD(BindingTestFixture, "callback function with transient resource"
 
     // 同步逃逸测试
     REQUIRE_THROWS_MATCHES(
-        engine->eval(String::newString(R"(
+        engine->evalScript(String::newString(R"(
             let escaped;
             EventBase.listen((e) => {
                 escaped = e; // 逃逸到外部作用域
@@ -466,12 +468,12 @@ TEST_CASE_METHOD(BindingTestFixture, "bind property") {
     // getter / setter
     REQUIRE_EVAL("new PropTest(123, 'hello').id == 123", "constructor check");
 
-    REQUIRE_NOTHROW(engine->eval(String::newString(R"(
+    REQUIRE_NOTHROW(engine->evalScript(String::newString(R"(
         let obj = new PropTest(123, 'hello');
         obj.id = 456;
         if (obj.id != 456) throw new Error("id should be 456");
     )")));
-    REQUIRE_NOTHROW(engine->eval(String::newString(R"(
+    REQUIRE_NOTHROW(engine->evalScript(String::newString(R"(
         let obj2 = new PropTest(123, 'hello');
         obj2.name = 'world';
         if (obj2.name != 'world') throw new Error("name should be 'world'");
@@ -479,7 +481,7 @@ TEST_CASE_METHOD(BindingTestFixture, "bind property") {
 
     // member pointer
     REQUIRE_EVAL("new PropTest(123, 'hello').id_ == 123", "constructor check");
-    REQUIRE_NOTHROW(engine->eval(String::newString(R"(
+    REQUIRE_NOTHROW(engine->evalScript(String::newString(R"(
         let obj3 = new PropTest(123, 'hello');
         obj3.id_ = 456;
         if (obj3.id_ != 456) throw new Error("id_ should be 456");
@@ -487,7 +489,7 @@ TEST_CASE_METHOD(BindingTestFixture, "bind property") {
 
     // readonly
     REQUIRE_THROWS_MATCHES(
-        engine->eval(String::newString(R"(
+        engine->evalScript(String::newString(R"(
             let obj4 = new PropTest(123, 'hello');
             obj4.readonly_id = 456;
             throw new Error("readonly_id should be readonly");
@@ -545,26 +547,26 @@ TEST_CASE_METHOD(BindingTestFixture, "smart pointer test") {
     EngineScope scope{engine.get()};
     engine->registerClass(SmartPointerTestMeta);
 
-    REQUIRE_NOTHROW(engine->eval(String::newString(R"(
+    REQUIRE_NOTHROW(engine->evalScript(String::newString(R"(
         let shared = SmartPtr.withShared();
         shared.id = 123;
         SmartPtr.checkShared(shared, 123);
     )")));
 
-    REQUIRE_NOTHROW(engine->eval(String::newString(R"(
+    REQUIRE_NOTHROW(engine->evalScript(String::newString(R"(
         let weak = SmartPtr.withWeak();
         weak.id = 8856;
         SmartPtr.checkWeak(weak, 8856);
     )")));
 
-    REQUIRE_NOTHROW(engine->eval(String::newString(R"(
+    REQUIRE_NOTHROW(engine->evalScript(String::newString(R"(
         let unique = SmartPtr.withUnique(1478520);
         SmartPtr.checkUnique(unique, 1478520);
     )")));
 
     // 确认 unique ptr 所有权正确
     REQUIRE_THROWS_MATCHES(
-        engine->eval(String::newString(R"(
+        engine->evalScript(String::newString(R"(
             let unique_ptr = SmartPtr.withUnique(1478520);
             SmartPtr.checkUnique(unique_ptr, 1478520); // release ownership
             unique_ptr.id = 123; // uaf
@@ -658,7 +660,7 @@ TEST_CASE_METHOD(BindingTestFixture, "Abstract class / Interface binding") {
 
     // 测试点：禁止 JS 直接 new 抽象类/接口
     REQUIRE_THROWS_MATCHES(
-        engine->eval(String::newString("new IAbstractObject()")),
+        engine->evalScript(String::newString("new IAbstractObject()")),
         Exception,
         Catch::Matchers::Message("Uncaught Error: This native class cannot be constructed.")
     );
@@ -879,7 +881,7 @@ TEST_CASE_METHOD(BindingTestFixture, "enable_trampoline") {
     );
 
     REQUIRE_THROWS_MATCHES(
-        engine->eval(String::newString(R"(
+        engine->evalScript(String::newString(R"(
             class MyPlugin extends Plugin {
                 constructor() {
                     super();

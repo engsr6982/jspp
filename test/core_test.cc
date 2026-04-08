@@ -1,9 +1,11 @@
+#include "jspp/Jspp.h"
 #include "jspp/core/Engine.h"
 #include "jspp/core/EngineScope.h"
 #include "jspp/core/Exception.h"
 #include "jspp/core/MetaInfo.h"
 #include "jspp/core/Reference.h"
 #include "jspp/core/Value.h"
+
 
 #include "catch2/catch_test_macros.hpp"
 #include "catch2/matchers/catch_matchers.hpp"
@@ -14,16 +16,16 @@ struct CoreTestFixture {
     CoreTestFixture() { engine = std::make_unique<jspp::Engine>(); }
 };
 
-TEST_CASE_METHOD(CoreTestFixture, "Engine::eval") {
+TEST_CASE_METHOD(CoreTestFixture, "Engine::evalScript") {
     REQUIRE(engine != nullptr);
 
     jspp::EngineScope scope(engine.get());
 
-    auto result = engine->eval(jspp::String::newString("1 + 1"));
+    auto result = engine->evalScript(jspp::String::newString("1 + 1"));
     REQUIRE(result.isNumber());
     REQUIRE(result.asNumber().getInt32() == 2);
 
-    result = engine->eval(jspp::String::newString("1 + '1'"));
+    result = engine->evalScript(jspp::String::newString("1 + '1'"));
     REQUIRE(result.isString());
     REQUIRE(result.asString().getValue() == "11");
 }
@@ -71,21 +73,21 @@ TEST_CASE_METHOD(CoreTestFixture, "registerClass") {
 
     engine->registerClass(meta);
 
-    auto result = engine->eval(jspp::String::newString("ScriptClass.foo()"));
+    auto result = engine->evalScript(jspp::String::newString("ScriptClass.foo()"));
     REQUIRE(result.isString());
     REQUIRE(result.asString().getValue() == "foo");
 
-    result = engine->eval(jspp::String::newString("ScriptClass.forward('bar')"));
+    result = engine->evalScript(jspp::String::newString("ScriptClass.forward('bar')"));
     REQUIRE(result.isString());
     REQUIRE(result.asString().getValue() == "bar");
 
-    engine->eval(jspp::String::newString("ScriptClass.name = 'bar'"));
-    result = engine->eval(jspp::String::newString("ScriptClass.name"));
+    engine->evalScript(jspp::String::newString("ScriptClass.name = 'bar'"));
+    result = engine->evalScript(jspp::String::newString("ScriptClass.name"));
     REQUIRE(result.isString());
     REQUIRE(result.asString().getValue() == "bar");
 
     // ensure toStringTag
-    result = engine->eval(jspp::String::newString("Object.prototype.toString.call(ScriptClass)"));
+    result = engine->evalScript(jspp::String::newString("Object.prototype.toString.call(ScriptClass)"));
     REQUIRE(result.isString());
     REQUIRE(result.asString().getValue() == "[object ScriptClass]");
 }
@@ -106,24 +108,24 @@ TEST_CASE_METHOD(CoreTestFixture, "registerEnum") {
 
     engine->registerEnum(meta);
 
-    auto result = engine->eval(jspp::String::newString("Color.$name"));
+    auto result = engine->evalScript(jspp::String::newString("Color.$name"));
     REQUIRE(result.isString());
     REQUIRE(result.asString().getValue() == "Color");
 
-    result = engine->eval(jspp::String::newString("Color.Red"));
+    result = engine->evalScript(jspp::String::newString("Color.Red"));
     REQUIRE(result.isNumber());
     REQUIRE(result.asNumber().getInt32() == static_cast<int64_t>(Color::Red));
 
-    result = engine->eval(jspp::String::newString("Color.Green"));
+    result = engine->evalScript(jspp::String::newString("Color.Green"));
     REQUIRE(result.isNumber());
     REQUIRE(result.asNumber().getInt32() == static_cast<int64_t>(Color::Green));
 
-    result = engine->eval(jspp::String::newString("Color.Blue"));
+    result = engine->evalScript(jspp::String::newString("Color.Blue"));
     REQUIRE(result.isNumber());
     REQUIRE(result.asNumber().getInt32() == static_cast<int64_t>(Color::Blue));
 
     // ensure toStringTag
-    result = engine->eval(jspp::String::newString("Object.prototype.toString.call(Color)"));
+    result = engine->evalScript(jspp::String::newString("Object.prototype.toString.call(Color)"));
     REQUIRE(result.isString());
     REQUIRE(result.asString().getValue() == "[object Color]");
 
@@ -135,7 +137,7 @@ TEST_CASE_METHOD(CoreTestFixture, "registerEnum") {
         return {};
     });
     engine->globalThis().set(jspp::String::newString("ensure"), ensure);
-    engine->eval(jspp::String::newString("for (let key in Color) { ensure(key) }"));
+    engine->evalScript(jspp::String::newString("for (let key in Color) { ensure(key) }"));
 }
 
 
@@ -143,7 +145,7 @@ TEST_CASE_METHOD(CoreTestFixture, "Exception pass-through") {
     jspp::EngineScope scope{engine.get()};
 
     REQUIRE_THROWS_MATCHES(
-        engine->eval(jspp::String::newString("throw new Error('abc')")),
+        engine->evalScript(jspp::String::newString("throw new Error('abc')")),
         jspp::Exception,
         Catch::Matchers::Message("Uncaught Error: abc")
     );
@@ -161,17 +163,17 @@ TEST_CASE_METHOD(CoreTestFixture, "Exception pass-through") {
     engine->globalThis().set(jspp::String::newString("throwr"), thowr);
     engine->globalThis().set(jspp::String::newString("ensure"), ensure);
 
-    engine->eval(jspp::String::newString("try { throwr() } catch (e) { ensure(e.message) }"));
+    engine->evalScript(jspp::String::newString("try { throwr() } catch (e) { ensure(e.message) }"));
 }
 
 
-TEST_CASE("Local<T> via Engine::eval - Boolean") {
+TEST_CASE("Local<T> via Engine::evalScript - Boolean") {
     using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
     EngineScope             enter{engine.get()};
 
-    auto bTrue  = engine->eval(String::newString("true"));
-    auto bFalse = engine->eval(String::newString("false"));
+    auto bTrue  = engine->evalScript(String::newString("true"));
+    auto bFalse = engine->evalScript(String::newString("false"));
 
     REQUIRE(bTrue.isBoolean());
     REQUIRE(bTrue.asBoolean().getValue() == true);
@@ -180,34 +182,34 @@ TEST_CASE("Local<T> via Engine::eval - Boolean") {
     REQUIRE(bFalse.asBoolean().getValue() == false);
 }
 
-TEST_CASE("Local<T> via Engine::eval - Number") {
+TEST_CASE("Local<T> via Engine::evalScript - Number") {
     using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
     EngineScope             enter{engine.get()};
 
-    auto n = engine->eval(String::newString("42"));
+    auto n = engine->evalScript(String::newString("42"));
     REQUIRE(n.isNumber());
     REQUIRE(n.asNumber().getInt32() == 42);
 }
 
-TEST_CASE("Local<T> via Engine::eval - String") {
+TEST_CASE("Local<T> via Engine::evalScript - String") {
     using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
     EngineScope             enter{engine.get()};
 
-    auto s = engine->eval(String::newString("'hello'"));
+    auto s = engine->evalScript(String::newString("'hello'"));
     REQUIRE(s.isString());
     REQUIRE(s.asString().getValue() == "hello");
     REQUIRE(s.asString().length() == 5);
 }
 
-TEST_CASE("Local<T> via Engine::eval - Null & Undefined") {
+TEST_CASE("Local<T> via Engine::evalScript - Null & Undefined") {
     using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
     EngineScope             enter{engine.get()};
 
-    auto n = engine->eval(String::newString("null"));
-    auto u = engine->eval(String::newString("undefined"));
+    auto n = engine->evalScript(String::newString("null"));
+    auto u = engine->evalScript(String::newString("undefined"));
 
     REQUIRE(n.isNull());
     REQUIRE(u.isUndefined());
@@ -215,34 +217,34 @@ TEST_CASE("Local<T> via Engine::eval - Null & Undefined") {
     REQUIRE(u.isNullOrUndefined());
 }
 
-TEST_CASE("Local<T> via Engine::eval - BigInt") {
+TEST_CASE("Local<T> via Engine::evalScript - BigInt") {
     using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
     EngineScope             enter{engine.get()};
 
-    auto bi = engine->eval(String::newString("1234567890123456789n"));
+    auto bi = engine->evalScript(String::newString("1234567890123456789n"));
     REQUIRE(bi.isBigInt());
     REQUIRE(bi.asBigInt().getInt64() == 1234567890123456789LL);
 }
 
-TEST_CASE("Local<T> via Engine::eval - Symbol") {
+TEST_CASE("Local<T> via Engine::evalScript - Symbol") {
     using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
     EngineScope             enter{engine.get()};
 
-    auto s = engine->eval(String::newString("Symbol('desc')"));
+    auto s = engine->evalScript(String::newString("Symbol('desc')"));
     REQUIRE(s.isSymbol());
     auto desc = s.asSymbol().getDescription();
     REQUIRE(desc.isString());
     REQUIRE(desc.asString().getValue() == "desc");
 }
 
-TEST_CASE("Local<T> via Engine::eval - Object") {
+TEST_CASE("Local<T> via Engine::evalScript - Object") {
     using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
     EngineScope             enter{engine.get()};
 
-    auto obj = engine->eval(String::newString("({foo: 123, bar: 'abc'})"));
+    auto obj = engine->evalScript(String::newString("({foo: 123, bar: 'abc'})"));
     REQUIRE(obj.isObject());
 
     auto foo = obj.asObject().get(String::newString("foo"));
@@ -257,12 +259,12 @@ TEST_CASE("Local<T> via Engine::eval - Object") {
     REQUIRE_FALSE(obj.asObject().has(String::newString("foo")));
 }
 
-TEST_CASE("Local<T> via Engine::eval - Array") {
+TEST_CASE("Local<T> via Engine::evalScript - Array") {
     using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
     EngineScope             enter{engine.get()};
 
-    auto arr = engine->eval(String::newString("[1,2,3]"));
+    auto arr = engine->evalScript(String::newString("[1,2,3]"));
     REQUIRE(arr.isArray());
     auto a = arr.asArray();
     REQUIRE(a.length() == 3);
@@ -270,12 +272,12 @@ TEST_CASE("Local<T> via Engine::eval - Array") {
     REQUIRE(a[1].asNumber().getInt32() == 2);
 }
 
-TEST_CASE("Local<T> via Engine::eval - Function") {
+TEST_CASE("Local<T> via Engine::evalScript - Function") {
     using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
     EngineScope             enter{engine.get()};
 
-    auto fn = engine->eval(String::newString("(function(x){return x+1;})"));
+    auto fn = engine->evalScript(String::newString("(function(x){return x+1;})"));
     REQUIRE(fn.isFunction());
     auto f = fn.asFunction();
 
@@ -284,7 +286,7 @@ TEST_CASE("Local<T> via Engine::eval - Function") {
     REQUIRE(result.asNumber().getInt32() == 42);
 
     auto value =
-        engine->eval(String::newString("class Foo { constructor(x){this.x = x;}  getX() {return this.x;} };Foo"));
+        engine->evalScript(String::newString("class Foo { constructor(x){this.x = x;}  getX() {return this.x;} };Foo"));
     REQUIRE(value.isFunction());
     auto ctor = value.asFunction();
     auto foo  = ctor.callAsConstructor({Number::newNumber(42)});
@@ -298,24 +300,24 @@ TEST_CASE("Local<T> via Engine::eval - Function") {
     REQUIRE(x.asNumber().getInt32() == 42);
 }
 
-TEST_CASE("Local<T> via Engine::eval - as<T> conversion") {
+TEST_CASE("Local<T> via Engine::evalScript - as<T> conversion") {
     using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
     EngineScope             enter{engine.get()};
 
-    auto          n   = engine->eval(String::newString("99"));
+    auto          n   = engine->evalScript(String::newString("99"));
     Local<Value>  v   = n.asValue();
     Local<Number> num = v.as<Number>();
     REQUIRE(num.getInt32() == 99);
 }
 
-TEST_CASE("Local<T> via Engine::eval - operator== and clear") {
+TEST_CASE("Local<T> via Engine::evalScript - operator== and clear") {
     using namespace jspp;
     std::unique_ptr<Engine> engine = std::make_unique<Engine>();
     EngineScope             enter{engine.get()};
 
-    auto n1 = engine->eval(String::newString("10"));
-    auto n2 = engine->eval(String::newString("10"));
+    auto n1 = engine->evalScript(String::newString("10"));
+    auto n2 = engine->evalScript(String::newString("10"));
 
     REQUIRE(n1 == n2.asValue());
     n1.clear();

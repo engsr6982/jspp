@@ -1,15 +1,11 @@
 #pragma once
 #include "Fwd.h"
-#include "V8TypeAlias.h"
 #include "jspp/Macro.h"
 
 #include <string>
 #include <string_view>
 
-JSPP_WARNING_GUARD_BEGIN
-#include <v8-function-callback.h>
-JSPP_WARNING_GUARD_END
-
+#include "jspp-backend/traits/TraitValue.h"
 
 namespace jspp {
 
@@ -106,15 +102,12 @@ public:
 
 class Engine; // forward declaration
 class Arguments {
-    Engine*                             engine_;
-    v8::FunctionCallbackInfo<v8::Value> args_;
-
-    explicit Arguments(Engine* engine, v8::FunctionCallbackInfo<v8::Value> const& args);
-
-    friend class Engine;
-    friend class Function;
+    using BackendImpl = internal::ImplType<Arguments>::type;
+    BackendImpl impl_;
 
 public:
+    explicit Arguments(BackendImpl impl); // for Function、Engine、BackendEngineImpl
+
     JSPP_DISABLE_COPY_MOVE(Arguments);
 
     [[nodiscard]] Engine* runtime() const;

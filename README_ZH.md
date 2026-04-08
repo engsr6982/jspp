@@ -12,6 +12,7 @@
 
 ## ✨ 核心特性
 
+- **多后端支持**: 支持 `V8` 和 `QuickJS` 引擎，未来计划支持更多后端。
 - **类似 pybind11 的链式 API**：使用 `defClass` 和 `defEnum` 极速声明绑定关系。
 - **无缝类型转换**：开箱即用支持 `std::vector`, `std::unordered_map`, `std::optional`, `std::variant`, `std::string` 等。
 - **智能指针与生命周期**：完美兼容 `std::shared_ptr`, `std::unique_ptr`, `std::weak_ptr`。
@@ -85,44 +86,26 @@ jspp 支持使用 CMake 或 XMake 进行构建。
 
 > **Note**: 你需要提供 v8 的头文件路径。
 
-#### 使用 CMake
-
 ```sh
 mkdir build
 cmake -B build -S . \
     -DCMAKE_BUILD_TYPE=Release \
-    -DV8_INCLUDE_DIR=/path/to/v8/include
+    -DJSPP_EXTERNAL_INC=/path/to/v8/include
 
 cmake --build build --config Release
-```
-
-#### 使用 XMake
-
-```sh
-xmake f --v8_include_dir=/patch/to/v8
-xmake
 ```
 
 ### 构建 jspp 和测试集
 
 > **Note**: 你需要提供 v8 的头文件路径和静态库路径。
 
-#### 使用 CMake
-
 ```sh
 mkdir build
 cmake -B build -S . \
     -DCMAKE_BUILD_TYPE=Debug \
-    -DV8_INCLUDE_DIR=/path/to/v8/include \
-    -DV8_STATIC_LIB=/path/to/v8/v8_monolith.a \
+    -DJSPP_EXTERNAL_INC=/path/to/v8/include \
+    -DJSPP_EXTERNAL_LIB=/path/to/v8/v8_monolith.a \
     -DJSPP_BUILD_TESTS=ON
 
 cmake --build build --config Debug
-```
-
-#### 使用 XMake
-
-```sh
-xmake f --v8_include_dir=/patch/to/v8 --v8_static_lib=/path/to/v8/v8_monolith --test=y
-xmake
 ```

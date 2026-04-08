@@ -1,13 +1,14 @@
-#include "Exception.h"
+#pragma once
+#include "jspp/core/EngineScope.h"
+#include "jspp/core/Exception.h"
+#include "jspp/core/Fwd.h"
+#include "jspp/core/Reference.h"
 
-#include "EngineScope.h"
-#include "Reference.h"
-#include "Value.h"
+#include "V8Helper.h"
+#include "jspp/core/Value.h"
+#include "jspp/core/ValueHelper.h"
 
-
-#include <algorithm>
-#include <exception>
-
+#include <string>
 
 JSPP_WARNING_GUARD_BEGIN
 #include <v8-exception.h>
@@ -18,40 +19,68 @@ JSPP_WARNING_GUARD_BEGIN
 #include <v8.h>
 JSPP_WARNING_GUARD_END
 
+
 namespace jspp {
 
+namespace v8_backend {
 
-Exception::Exception(v8::TryCatch const& tryCatch) : std::exception(), ctx_(std::make_shared<ExceptionContext>()) {
-    auto isolate = EngineScope::currentEngineIsolateChecked();
+void V8ExceptionContext::extractMessage() const noexcept try {
+    if (!message.empty()) {
+        return;
+    }
+    auto isolate = V8Helper::currentIsolateChecked();
+    auto vtry    = v8::TryCatch{isolate};
 
-    ctx_->exception = v8::Global<v8::Value>(isolate, tryCatch.Exception());
+    auto msg = v8::Exception::CreateMessage(isolate, error.Get(isolate));
+    if (!msg.IsEmpty()) {
+        message = ValueHelper::wrap<String>(msg->Get()).getValue();
+    }
+} catch (...) {
+    message = "[ERROR: Could not get exception message]";
+}
+
+} // namespace v8_backend
+
+Exception::Exception(Local<Value> const& exception) : std::exception(), ctx_(std::make_shared<ExceptionContext>()) {
+    auto isolate = v8_backend::V8Helper::currentIsolateChecked();
+
+    ctx_->error = v8::Global<v8::Value>(isolate, ValueHelper::unwrap(exception));
+}
+
+Exception::Exception(Local<String> const& message, Type type)
+: std::exception(),
+  ctx_(std::make_shared<ExceptionContext>()) {
+    ctx_->type    = type;
+    ctx_->message = message.getValue();
+    makeException(); // null exception, make it
 }
 
 Exception::Exception(std::string message, Type type) : std::exception(), ctx_(std::make_shared<ExceptionContext>()) {
     ctx_->type    = type;
     ctx_->message = std::move(message);
-    makeException(); // null exception, make it
+    // C++ throw, lazy make exception
 }
 
 
 Exception::Type Exception::type() const noexcept { return ctx_->type; }
 
 char const* Exception::what() const noexcept {
-    extractMessage();
+    ctx_->extractMessage();
     return ctx_->message.c_str();
 }
 
 std::string Exception::message() const noexcept {
-    extractMessage();
+    ctx_->extractMessage();
     return ctx_->message;
 }
 
 std::string Exception::stacktrace() const noexcept {
-    auto&& [isolate, ctx] = EngineScope::currentIsolateAndContextChecked();
+    auto&& [isolate, ctx] = v8_backend::V8Helper::currentIsolateContextChecked();
 
     auto vtry = v8::TryCatch{isolate}; // noexcept
 
-    auto stack = v8::TryCatch::StackTrace(ctx, ctx_->exception.Get(isolate));
+    auto exc   = ValueHelper::unwrap(exception());
+    auto stack = v8::TryCatch::StackTrace(ctx, exc);
     if (!stack.IsEmpty()) {
         v8::String::Utf8Value ut8{isolate, stack.ToLocalChecked()};
         if (auto str = *ut8) {
@@ -61,29 +90,19 @@ std::string Exception::stacktrace() const noexcept {
     return "[ERROR: Could not get stacktrace]";
 }
 
-void Exception::rethrowToRuntime() const {
-    auto isolate = EngineScope::currentEngineIsolateChecked();
-    isolate->ThrowException(ctx_->exception.Get(isolate));
-}
+Local<Value> Exception::exception() const noexcept {
+    auto isolate = v8_backend::V8Helper::currentIsolateChecked();
 
-void Exception::extractMessage() const noexcept {
-    if (!ctx_->message.empty()) {
-        return;
+    if (ctx_->error.IsEmpty()) {
+        makeException();
     }
-    auto isolate = EngineScope::currentEngineIsolateChecked();
-    auto vtry    = v8::TryCatch{isolate};
 
-    auto msg = v8::Exception::CreateMessage(isolate, ctx_->exception.Get(isolate));
-    if (!msg.IsEmpty()) {
-        Local<String> jsStr{msg->Get()};
-        ctx_->message = jsStr.toString().getValue();
-        return;
-    }
-    ctx_->message = "[ERROR: Could not get exception message]";
+    auto v8local = ctx_->error.Get(isolate);
+    return ValueHelper::wrap<Value>(v8local);
 }
 
 void Exception::makeException() const {
-    auto isolate = EngineScope::currentEngineIsolateChecked();
+    auto isolate = v8_backend::V8Helper::currentIsolateChecked();
 
     v8::Local<v8::Value> exception;
     {
@@ -110,13 +129,7 @@ void Exception::makeException() const {
             break;
         }
     }
-    ctx_->exception = v8::Global<v8::Value>(isolate, exception);
-}
-
-void Exception::rethrow(v8::TryCatch const& tryCatch) {
-    if (tryCatch.HasCaught()) {
-        throw Exception(tryCatch);
-    }
+    ctx_->error = v8::Global<v8::Value>(isolate, exception);
 }
 
 

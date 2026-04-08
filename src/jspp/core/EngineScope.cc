@@ -9,18 +9,28 @@ namespace jspp {
 
 thread_local EngineScope* EngineScope::gCurrentScope_ = nullptr;
 
-EngineScope::EngineScope(Engine& runtime) : EngineScope(&runtime) {}
-EngineScope::EngineScope(Engine* runtime)
-: engine_(runtime),
-  prev_(gCurrentScope_),
-  locker_(runtime->isolate_),
-  isolateScope_(runtime->isolate_),
-  handleScope_(runtime->isolate_),
-  contextScope_(runtime->context_.Get(runtime->isolate_)) {
+EngineScope::EngineScope(Engine& engine) : EngineScope(&engine) {}
+EngineScope::EngineScope(Engine* engine) : EngineScope(InternalEnterFlag{}, engine) {
+    if (engine_ == nullptr) {
+        throw std::logic_error("An EngineScope must be created with an Engine");
+    }
+}
+EngineScope::EngineScope(InternalEnterFlag, Engine* engine, bool needEnter) : engine_(engine), prev_(gCurrentScope_) {
+    auto prevEngine = prev_ != nullptr ? prev_->engine_ : nullptr;
+    needEnter_      = needEnter && engine_ != nullptr && prevEngine != engine;
+    if (needEnter_) {
+        // todo: check destroying engine?
+        impl_.emplace(*engine, prevEngine);
+    }
     gCurrentScope_ = this;
 }
 
-EngineScope::~EngineScope() { gCurrentScope_ = prev_; }
+EngineScope::~EngineScope() {
+    if (needEnter_) {
+        impl_.reset();
+    }
+    gCurrentScope_ = prev_;
+}
 
 Engine* EngineScope::currentEngine() {
     if (gCurrentScope_) {
@@ -35,26 +45,32 @@ Engine& EngineScope::currentEngineChecked() {
     return *current;
 }
 
-std::tuple<v8::Isolate*, v8::Local<v8::Context>> EngineScope::currentIsolateAndContextChecked() {
-    auto& current = currentEngineChecked();
-    return std::make_tuple(current.isolate_, current.context_.Get(current.isolate_));
-}
-
-v8::Isolate*           EngineScope::currentEngineIsolateChecked() { return currentEngineChecked().isolate_; }
-v8::Local<v8::Context> EngineScope::currentEngineContextChecked() {
-    auto& current = currentEngineChecked();
-    return current.context_.Get(current.isolate_);
-}
 void EngineScope::ensureEngine(Engine* engine) {
     if (engine == nullptr) {
         throw std::logic_error("An EngineScope must be created before accessing the engine API");
     }
 }
 
+// ExitEngineScope
+ExitEngineScope::ExitEngineScope()
+: holder_(EngineScope::currentEngine()),
+  nullScope_(EngineScope::InternalEnterFlag{}, nullptr) {}
 
-ExitEngineScope::ExitEngineScope() : unlocker_(EngineScope::currentEngineChecked().isolate_) {}
+ExitEngineScope::ExitHolder::ExitHolder(Engine* engine) {
+    if (engine) {
+        impl_.emplace(*engine);
+    }
+}
+
+ExitEngineScope::~ExitEngineScope() = default;
 
 
+// StackFrameScope
+StackFrameScope::StackFrameScope(Engine& engine) : impl_(engine) {}
+StackFrameScope::~StackFrameScope() = default;
+
+
+// TransientObjectScope
 thread_local TransientObjectScope* TransientObjectScope::gCurrentScope_ = nullptr;
 
 TransientObjectScope::TransientObjectScope() : prev_(gCurrentScope_) { gCurrentScope_ = this; }
@@ -72,13 +88,6 @@ TransientObjectScope& TransientObjectScope::currentChecked() {
     if (!scope) throw std::logic_error("No TransientNativeScope is active");
     return *scope;
 }
-
-namespace internal {
-
-V8EscapeScope::V8EscapeScope() : handleScope_(EngineScope::currentEngineChecked().isolate_) {}
-V8EscapeScope::V8EscapeScope(v8::Isolate* isolate) : handleScope_(isolate) {}
-
-} // namespace internal
 
 
 } // namespace jspp

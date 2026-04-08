@@ -1,6 +1,7 @@
 #include "Trampoline.h"
 #include "Reference.h"
 #include "Value.h"
+#include "jspp/core/Engine.h"
 #include "jspp/core/ValueHelper.h"
 
 namespace jspp {

@@ -450,14 +450,14 @@ struct TypeConverter<std::weak_ptr<T>> {
         if (!shared) {
             return Null::newNull(); // 对象已死，返回 null
         }
-        // 委托给 shared_ptr 转换器，让 V8 持有一个强引用
+        // 委托给 shared_ptr 转换器，让 NativeInstance 持有一个强引用
         return TypeConverter<std::shared_ptr<T>>::toJs(shared, policy, parent);
     }
 
     using Ptr = std::weak_ptr<T>;
     static Ptr toCpp(Local<Value> const& value) {
         // 提取出来的临时 shared_ptr 会隐式转换为 weak_ptr 并返回。
-        // 因为 V8 里的 NativeInstance 还在，所以底层的引用计数至少为 1，绝不会立刻失效。
+        // 因为 Class 里的 NativeInstance 还在，所以底层的引用计数至少为 1，绝不会立刻失效。
         return TypeConverter<std::shared_ptr<T>>::toCpp(value);
     }
 };
@@ -676,7 +676,7 @@ std::function<R(Args...)> wrapScriptCallback(Local<Value> const& value) {
     }
     auto& engine = EngineScope::currentEngineChecked();
 
-    // 使用跟踪句柄，避免 C++ 侧拷贝 Lambda、长期持有 Global 导致 v8::Isolate 析构异常
+    // 使用跟踪句柄，避免 C++ 侧拷贝 Lambda、长期持有 Global 导致引擎析构资源泄漏
     auto safeKeep = TrackedGlobal<Function>::create(value.asFunction());
 
     return [keep = std::move(safeKeep), engine = &engine](Args&&... args) -> R {

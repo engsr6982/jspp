@@ -14,7 +14,7 @@ namespace jspp {
 
 /**
  * 实例内部数据载体
- * @note 此结构作为 C++ 侧资源承载体，存储进 v8 InternalField 中
+ * @note 此结构作为 C++ 侧资源承载体
  */
 struct InstancePayload final {
 private:
@@ -22,18 +22,20 @@ private:
 
     // internal use only
     ClassMeta const* define_{nullptr};
-    Engine const*    engine_{nullptr};
+    Engine*          engine_{nullptr};
     bool const       constructFromJs_{false};
 
     friend Engine; // for internal use only
 
 
 public:
-    [[nodiscard]] inline NativeInstance& getHolder() { return *holder_; }
+    [[nodiscard]] inline Engine* getEngine() const { return engine_; }
+
+    [[nodiscard]] inline NativeInstance& getHolder() const { return *holder_; }
 
     [[nodiscard]] inline ClassMeta const* getDefine() const { return define_; }
 
-    [[nodiscard]] bool isConstructFromJs() const { return constructFromJs_; }
+    [[nodiscard]] inline bool isConstructFromJs() const { return constructFromJs_; }
 
     template <typename T>
     inline T* unwrap() const {
@@ -46,7 +48,7 @@ public:
     explicit InstancePayload(
         std::unique_ptr<NativeInstance>&& holder,
         ClassMeta const*                  define,
-        Engine const*                     engine,
+        Engine*                           engine,
         bool                              constructFromJs
     )
     : holder_(std::move(holder)),

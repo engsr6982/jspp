@@ -1,13 +1,9 @@
 #pragma once
+#include "Fwd.h"
 #include "jspp/Macro.h"
+#include "jspp/core/Concepts.h"
 
-JSPP_WARNING_GUARD_BEGIN
-#include <v8-context.h>
-#include <v8-isolate.h>
-#include <v8-locker.h>
-#include <v8.h>
-JSPP_WARNING_GUARD_END
-
+#include "jspp-backend/traits/TraitScope.h"
 
 namespace jspp {
 
@@ -16,8 +12,8 @@ class NativeInstance;
 
 class EngineScope final {
 public:
-    explicit EngineScope(Engine& runtime);
-    explicit EngineScope(Engine* runtime);
+    explicit EngineScope(Engine& engine);
+    explicit EngineScope(Engine* engine);
     ~EngineScope();
 
     JSPP_DISABLE_COPY_MOVE(EngineScope);
@@ -27,37 +23,75 @@ public:
 
     static Engine& currentEngineChecked();
 
-    static std::tuple<v8::Isolate*, v8::Local<v8::Context>> currentIsolateAndContextChecked();
-
-    static v8::Isolate* currentEngineIsolateChecked();
-
-    static v8::Local<v8::Context> currentEngineContextChecked();
-
 private:
+    struct InternalEnterFlag {};
+    explicit EngineScope(InternalEnterFlag, Engine* engine, bool needEnter = true);
+
+    friend class ExitEngineScope;
+
     static void ensureEngine(Engine* engine);
 
-    // 作用域链
-    Engine const* engine_{nullptr};
-    EngineScope*  prev_{nullptr};
+    bool needEnter_{false}; // 是否需要进入作用域
 
-    // v8作用域
-    v8::Locker         locker_;
-    v8::Isolate::Scope isolateScope_;
-    v8::HandleScope    handleScope_;
-    v8::Context::Scope contextScope_;
+    using BakcendImpl = internal::ImplType<EngineScope>::type;
+    std::optional<BakcendImpl> impl_;
+
+    // 作用域链
+    Engine*      engine_{nullptr};
+    EngineScope* prev_{nullptr};
 
     static thread_local EngineScope* gCurrentScope_;
 };
 
 class ExitEngineScope final {
-    v8::Unlocker unlocker_;
+    using BackendImpl = internal::ImplType<ExitEngineScope>::type;
+    struct ExitHolder {
+        std::optional<BackendImpl> impl_;
+        explicit ExitHolder(Engine* engine);
+    };
+
+    ExitHolder  holder_;
+    EngineScope nullScope_;
 
 public:
     explicit ExitEngineScope();
-    ~ExitEngineScope() = default;
+    ~ExitEngineScope();
 
     JSPP_DISABLE_COPY_MOVE(ExitEngineScope);
     JSPP_DISABLE_NEW();
+};
+
+/**
+ * @brief 栈帧作用域 (抽象内存屏障)
+ *
+ * StackFrameScope 用于模拟 C++ 函数调用的栈帧行为，主要解决脚本句柄（Handles）在循环或长函数中的堆积问题。
+ *
+ * @section 核心职责
+ * 1. 内存屏障：在作用域内生成的局部脚本对象句柄会在析构时被批量回收。
+ * 2. 值逃逸：允许将一个特定的局部句柄“逃逸”（Escape）到父级作用域，防止其随当前栈帧一同销毁。
+ *
+ * @section 引擎差异实现
+ * - V8 后端：封装 `v8::EscapableHandleScope`。在 V8 中，如果不显式开启新的作用域而在循环中创建大量 Local 句柄，
+ *   这些句柄会持续堆积在当前的 HandleScope 中直至函数结束，造成极大的内存压力甚至导致堆栈溢出。
+ *   通过 `StackFrameScope` 可以实现“即用即切”，在循环体内部精细回收。
+ * - QuickJS/其他后端：对于基于引用计数或无显式句柄池的引擎，此类通常作为 NOP (无操作) 实现，
+ *   或者仅作为逻辑上的代码边界，其 `escape` 方法仅执行简单的指针/引用转发。
+ */
+class StackFrameScope final {
+    using BackendImpl = internal::ImplType<StackFrameScope>::type;
+    BackendImpl impl_;
+
+public:
+    JSPP_DISABLE_NEW();
+    JSPP_DISABLE_COPY_MOVE(StackFrameScope);
+
+    explicit StackFrameScope(Engine& engine);
+    ~StackFrameScope();
+
+    template <concepts::WrapType T>
+    [[nodiscard]] Local<T> escape(Local<T> handle) {
+        return impl_.escape(std::move(handle));
+    }
 };
 
 
@@ -99,23 +133,5 @@ private:
 
     static thread_local TransientObjectScope* gCurrentScope_;
 };
-
-namespace internal {
-
-class V8EscapeScope final {
-    v8::EscapableHandleScope handleScope_;
-
-public:
-    explicit V8EscapeScope();
-    explicit V8EscapeScope(v8::Isolate* isolate);
-    ~V8EscapeScope() = default;
-
-    template <typename T>
-    v8::Local<T> escape(v8::Local<T> value) {
-        return handleScope_.Escape(value);
-    }
-};
-
-} // namespace internal
 
 } // namespace jspp

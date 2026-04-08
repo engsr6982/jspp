@@ -1,6 +1,5 @@
 #pragma once
-#include "Concepts.h"    // NOLINT
-#include "V8TypeAlias.h" // NOLINT
+#include "Concepts.h" // NOLINT
 #include "jspp/Macro.h"
 
 #include <cstdint>
@@ -8,11 +7,7 @@
 #include <type_traits>
 #include <vector>
 
-JSPP_WARNING_GUARD_BEGIN
-#include <v8-function.h>
-#include <v8-local-handle.h>
-#include <v8-primitive.h>
-JSPP_WARNING_GUARD_END
+#include "jspp-backend/traits/TraitReference.h"
 
 
 namespace jspp {
@@ -46,11 +41,11 @@ public:                                                                         
                  operator Local<Value>() const { return asValue(); }                                                   \
     bool         operator==(Local<VALUE> const& other) const { return operator==(other.asValue()); }
 
-#define SPECALIZATION_V8_LOCAL_TYPE(VALUE)                                                                             \
+#define DECL_BACKEND_IMPL_TYPE(VALUE)                                                                                  \
 private:                                                                                                               \
-    using Type = internal::V8Type_v<VALUE>;                                                                            \
-    explicit Local(v8::Local<Type>);                                                                                   \
-    v8::Local<Type> val
+    using BackendType = internal::ImplType<jspp::Local<VALUE>>::type;                                                  \
+    explicit Local(BackendType);                                                                                       \
+    BackendType val
 
 
 template <typename T>
@@ -61,13 +56,12 @@ class Local final {
 template <>
 class Local<Value> {
     SPECIALIZATION_LOCAL(Value);
-    SPECALIZATION_V8_LOCAL_TYPE(Value);
+    DECL_BACKEND_IMPL_TYPE(Value);
 
     friend class Arguments;
 
 public:
-    // default v8::Undefined -> undefined
-    Local() noexcept;
+    Local() noexcept; // undefined
 
     [[nodiscard]] ValueKind kind() const;
 
@@ -109,21 +103,21 @@ template <>
 class Local<Null> {
     SPECIALIZATION_LOCAL(Null);
     SPECALIZATION_AS_VALUE(Null);
-    SPECALIZATION_V8_LOCAL_TYPE(Null);
+    DECL_BACKEND_IMPL_TYPE(Null);
 };
 
 template <>
 class Local<Undefined> {
     SPECIALIZATION_LOCAL(Undefined);
     SPECALIZATION_AS_VALUE(Undefined);
-    SPECALIZATION_V8_LOCAL_TYPE(Undefined);
+    DECL_BACKEND_IMPL_TYPE(Undefined);
 };
 
 template <>
 class Local<Boolean> {
     SPECIALIZATION_LOCAL(Boolean);
     SPECALIZATION_AS_VALUE(Boolean);
-    SPECALIZATION_V8_LOCAL_TYPE(Boolean);
+    DECL_BACKEND_IMPL_TYPE(Boolean);
 
 public:
     [[nodiscard]] bool getValue() const;
@@ -135,7 +129,7 @@ template <>
 class Local<Number> {
     SPECIALIZATION_LOCAL(Number);
     SPECALIZATION_AS_VALUE(Number);
-    SPECALIZATION_V8_LOCAL_TYPE(Number);
+    DECL_BACKEND_IMPL_TYPE(Number);
 
 public:
     [[nodiscard]] int    getInt32() const;
@@ -153,7 +147,7 @@ template <>
 class Local<BigInt> {
     SPECIALIZATION_LOCAL(BigInt);
     SPECALIZATION_AS_VALUE(BigInt);
-    SPECALIZATION_V8_LOCAL_TYPE(BigInt);
+    DECL_BACKEND_IMPL_TYPE(BigInt);
 
 public:
     [[nodiscard]] int64_t  getInt64() const;
@@ -164,7 +158,7 @@ template <>
 class Local<String> {
     SPECIALIZATION_LOCAL(String);
     SPECALIZATION_AS_VALUE(String);
-    SPECALIZATION_V8_LOCAL_TYPE(String);
+    DECL_BACKEND_IMPL_TYPE(String);
 
 public:
     [[nodiscard]] int         length() const;
@@ -175,7 +169,7 @@ template <>
 class Local<Symbol> {
     SPECIALIZATION_LOCAL(Symbol);
     SPECALIZATION_AS_VALUE(Symbol);
-    SPECALIZATION_V8_LOCAL_TYPE(Symbol);
+    DECL_BACKEND_IMPL_TYPE(Symbol);
 
 public:
     Local<Value> getDescription(); // maybe undefined
@@ -185,7 +179,7 @@ template <>
 class Local<Object> {
     SPECIALIZATION_LOCAL(Object);
     SPECALIZATION_AS_VALUE(Object);
-    SPECALIZATION_V8_LOCAL_TYPE(Object);
+    DECL_BACKEND_IMPL_TYPE(Object);
 
     friend class Arguments;
 
@@ -210,14 +204,15 @@ public:
         PropertyAttribute    attrs = PropertyAttribute::None
     ) const;
 
-    [[nodiscard]] bool defineProperty(Local<String> const& key, PropertyDescriptor& desc) const;
+    // todo: wait PropertyDescriptor implementation
+    // [[nodiscard]] bool defineProperty(Local<String> const& key, PropertyDescriptor& desc) const;
 };
 
 template <>
 class Local<Array> {
     SPECIALIZATION_LOCAL(Array);
     SPECALIZATION_AS_VALUE(Array);
-    SPECALIZATION_V8_LOCAL_TYPE(Array);
+    DECL_BACKEND_IMPL_TYPE(Array);
 
 public:
     [[nodiscard]] size_t length() const;
@@ -237,7 +232,7 @@ template <>
 class Local<Function> {
     SPECIALIZATION_LOCAL(Function);
     SPECALIZATION_AS_VALUE(Function);
-    SPECALIZATION_V8_LOCAL_TYPE(Function);
+    DECL_BACKEND_IMPL_TYPE(Function);
 
 public:
     [[nodiscard]] bool isAsyncFunction() const; // JavaScript: async function
@@ -259,20 +254,26 @@ public:
 
 #undef SPECIALIZATION_LOCAL
 #undef SPECALIZATION_AS_VALUE
-#undef SPECALIZATION_V8_LOCAL_TYPE
+#undef DECL_BACKEND_IMPL_TYPE
 
 
 template <typename T>
 class Global final {
     static_assert(std::is_base_of_v<Value, T>, "T must be derived from Value");
 
+    using BackendImpl = internal::ImplType<Global<T>>::type;
+    BackendImpl impl;
+
+    friend Engine;
+    friend Weak<T>;
+
 public:
-    JSPP_DISABLE_COPY(Global); // v8::Global is not copyable
+    JSPP_DISABLE_COPY(Global);
 
     Global() noexcept; // empty
 
     explicit Global(Local<T> const& val);
-    explicit Global(Weak<T> const& val);
+    explicit Global(Weak<T>&& val);
 
     Global(Global<T>&& other) noexcept;
     Global& operator=(Global<T>&& other) noexcept;
@@ -290,27 +291,25 @@ public:
     void reset(Local<T> const& val);
 
     [[nodiscard]] Engine* engine() const;
-
-private:
-    using v8Global = v8::Global<internal::V8Type_v<T>>;
-
-    Engine*  engine_ = nullptr;
-    v8Global handle_;
-
-    friend Engine;
 };
 
 template <typename T>
 class Weak final {
     static_assert(std::is_base_of_v<Value, T>, "T must be derived from Value");
 
+    using BackendImpl = internal::ImplType<Weak<T>>::type;
+    BackendImpl impl;
+
+    friend Engine;
+    friend Global<T>;
+
 public:
-    JSPP_DISABLE_COPY(Weak); // v8::Global is not copyable
+    JSPP_DISABLE_COPY(Weak);
 
     Weak() noexcept; // empty
 
     explicit Weak(Local<T> const& val);
-    explicit Weak(Global<T> const& val);
+    explicit Weak(Global<T>&& val);
 
     Weak(Weak<T>&& other) noexcept;
     Weak& operator=(Weak<T>&& other) noexcept;
@@ -328,16 +327,6 @@ public:
     void reset(Local<T> const& val);
 
     [[nodiscard]] Engine* engine() const;
-
-private:
-    using v8Global = v8::Global<internal::V8Type_v<T>>;
-
-    Engine*  engine_ = nullptr;
-    v8Global handle_;
-
-    inline void markWeak();
-
-    friend Engine;
 };
 
 

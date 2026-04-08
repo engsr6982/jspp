@@ -1,6 +1,7 @@
 #pragma once
 #include "Concepts.h"
-#include "V8TypeAlias.h"
+
+#include "jspp-backend/traits/TraitReference.h"
 
 
 namespace jspp {
@@ -9,15 +10,16 @@ namespace jspp {
 struct ValueHelper {
     ValueHelper() = delete;
 
-    template <typename T>
-        requires concepts::WrapType<T>
-    [[nodiscard]] inline static v8::Local<internal::V8Type_v<T>> unwrap(Local<T> const& value);
+    template <concepts::WrapType T>
+    [[nodiscard]] inline static auto unwrap(Local<T> value) {
+        return value.val; // friend
+    }
 
-    template <typename T>
-    [[nodiscard]] inline static Local<T> wrap(v8::Local<internal::V8Type_v<T>> const& value);
+    template <concepts::WrapType T>
+    [[nodiscard]] inline static Local<T> wrap(typename internal::ImplType<Local<T>>::type value) {
+        return Local<T>{value};
+    }
 };
 
 
 } // namespace jspp
-
-#include "ValueHelper.inl"

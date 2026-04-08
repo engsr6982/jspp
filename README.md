@@ -13,6 +13,7 @@ manually.
 
 ## ✨ Features
 
+- **Multiple backend support**: Supports `V8` and `QuickJS` engines, with plans to support more backends in the future.
 - **pybind11-style Fluent API**: Declare JS bindings in pure, clean C++ using `defClass` and `defEnum`.
 - **Seamless Type Conversions**: Out-of-the-box support for `std::vector`, `std::unordered_map`, `std::optional`,
   `std::variant`, `std::string`, and more.
@@ -83,50 +84,32 @@ Just like pybind11, jspp provides fine-grained control over object lifetimes whe
 
 ## 🔨 Building
 
-jspp is built with CMake or XMake. To build, run:
+jspp is built with CMake. To build, run:
 
 ### Build jspp only
 
 > **Note**: You need provide the path to your V8 include directory.
 
-#### Using CMake
-
 ```sh
 mkdir build
 cmake -B build -S . \
     -DCMAKE_BUILD_TYPE=Release \
-    -DV8_INCLUDE_DIR=/path/to/v8/include
+    -DJSPP_EXTERNAL_INC=/path/to/v8/include
 
 cmake --build build --config Release
-```
-
-#### Using XMake
-
-```sh
-xmake f --v8_include_dir=/patch/to/v8
-xmake
 ```
 
 ### Build jspp with testing
 
 > **Note**: You need to build **v8 monolith lib** and provide the path to it.
 
-#### Using CMake
-
 ```sh
 mkdir build
 cmake -B build -S . \
     -DCMAKE_BUILD_TYPE=Debug \
-    -DV8_INCLUDE_DIR=/path/to/v8/include \
-    -DV8_STATIC_LIB=/path/to/v8/v8_monolith.a \
+    -DJSPP_EXTERNAL_INC=/path/to/v8/include \
+    -DJSPP_EXTERNAL_LIB=/path/to/v8/v8_monolith.a \
     -DJSPP_BUILD_TESTS=ON
 
 cmake --build build --config Debug
-```
-
-#### Using XMake
-
-```sh
-xmake f --v8_include_dir=/patch/to/v8 --v8_static_lib=/path/to/v8/v8_monolith --test=y
-xmake
 ```

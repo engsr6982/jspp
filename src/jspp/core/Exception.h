@@ -1,32 +1,24 @@
 #pragma once
+#include "Fwd.h"
 #include "jspp/Macro.h"
+
 #include <exception>
 #include <memory>
 #include <string>
+#include <type_traits>
 
 
-JSPP_WARNING_GUARD_BEGIN
-#include <v8-exception.h>
-#include <v8-persistent-handle.h>
-#include <v8-value.h>
-JSPP_WARNING_GUARD_END
-
+#include "jspp-backend/traits/TraitException.h"
 
 namespace jspp {
 
 
 class Exception final : public std::exception {
 public:
-    enum class Type {
-        Unknown = -1, // JavaScript 侧抛出的异常为 Unknown
-        Error,
-        RangeError,
-        ReferenceError,
-        SyntaxError,
-        TypeError
-    };
+    using Type = ExceptionType;
 
-    explicit Exception(v8::TryCatch const& tryCatch);
+    explicit Exception(Local<Value> const& exception);
+    explicit Exception(Local<String> const& message, Type type = Type::Error);
     explicit Exception(std::string message, Type type = Type::Error);
 
     // The C++ standard requires exception classes to be reproducible
@@ -43,34 +35,16 @@ public:
 
     [[nodiscard]] std::string stacktrace() const noexcept;
 
-    /**
-     * Throw this exception to v8 (JavaScript).
-     * Normally we don't need to call this method, the package library handles exceptions internally.
-     * You just need to re-throw 'throw e;`
-     * Or throw Exception inside the Function callback.
-     */
-    void rethrowToRuntime() const;
-
-public:
-    /**
-     * Re-throw the exception in v8::TryCatch as a Exception
-     */
-    static void rethrow(v8::TryCatch const& tryCatch);
+    [[nodiscard]] Local<Value> exception() const noexcept;
 
 private:
-    void extractMessage() const noexcept;
     void makeException() const;
 
     /**
-     * v8::Global does not allow copying of resources,
+     * Global handle does not allow copying of resources,
      * but the C++ standard requires exception classes to be replicated
      */
-    struct ExceptionContext {
-        Type                          type{Type::Unknown};
-        mutable std::string           message{};
-        mutable v8::Global<v8::Value> exception{};
-    };
-
+    using ExceptionContext = internal::ImplType<Exception>::type;
     std::shared_ptr<ExceptionContext> ctx_{nullptr};
 };
 
