@@ -11,8 +11,8 @@ project(jspp CXX)
 # ==============================================================================
 set(JSPP_BACKEND "v8" CACHE STRING "Select JS backend: v8 or quickjs")
 
-set(JSPP_EXTERNAL_INC "" CACHE PATH "Include directories of the JS engine")
-set(JSPP_EXTERNAL_LIB "" CACHE PATH "Full paths to the JS engine libraries")
+set(JSPP_EXTERNAL_INC "" CACHE PATH "Optional: Path to JS engine headers")
+set(JSPP_EXTERNAL_LIB "" CACHE PATH "Optional: Path to JS engine library files")
 
 message(STATUS "[jspp] Backend: ${JSPP_BACKEND}")
 message(STATUS "[jspp] External Inc: ${JSPP_EXTERNAL_INC}")
@@ -33,39 +33,20 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
 # ==============================================================================
 # Target: jspp
 # ==============================================================================
+add_library(jspp STATIC)
 
-set(JSPP_CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
-set(JSPP_BACKEND_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src-${JSPP_BACKEND}")
-
-file(GLOB_RECURSE CORE_SRC "${JSPP_CORE_DIR}/*.cc")
-file(GLOB_RECURSE BACKEND_SRC "${JSPP_BACKEND_DIR}/*.cc")
-
-file(GLOB_RECURSE SRC_FILES "src/*.cc")
-file(GLOB_RECURSE HEADER_FILES "src/jspp/*.h" "src/jspp/*.inl")
-
-add_library(jspp STATIC ${CORE_SRC} ${BACKEND_SRC})
-
-target_include_directories(jspp PUBLIC 
-    $<BUILD_INTERFACE:${JSPP_CORE_DIR}>
-    $<BUILD_INTERFACE:${JSPP_BACKEND_DIR}>
-)
-
-if(JSPP_EXTERNAL_INC)
-    target_include_directories(jspp PUBLIC ${JSPP_EXTERNAL_INC})
-endif()
-
-if(JSPP_EXTERNAL_LIB)
-    target_link_libraries(jspp PUBLIC ${JSPP_EXTERNAL_LIB})
-endif()
+file(GLOB_RECURSE CORE_SRC "src/*.cc")
+target_sources(jspp PRIVATE ${CORE_SRC})
+target_include_directories(jspp PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 
 target_compile_definitions(jspp PUBLIC "$<$<CONFIG:Debug>:JSPP_DEBUG>")
 
 # backend specific options
 if (${JSPP_BACKEND} STREQUAL "v8")
-    target_compile_definitions(jspp PUBLIC "JSPP_BACKEND_V8")
-elseif(${JSPP_BACKEND} STREQAL "quickjs")
-    target_compile_definitions(jspp PUBLIC "JSPP_BACKEND_QUICKJS")
+    include(src-v8/Configure.cmake)
+elseif(${JSPP_BACKEND} STREQUAL "quickjs")
+    include(src-quickjs/Configure.cmake)
 else()
     message(FATAL_ERROR "Invalid backend: ${JSPP_BACKEND}")
 endif()
@@ -74,10 +55,7 @@ endif()
 if(WIN32)
     target_compile_options(jspp PUBLIC /utf-8 /W4 /sdl /Zc:__cplusplus /Zc:preprocessor)
 elseif(UNIX AND NOT APPLE)
-    if(NOT APPLE)
-        set_property(TARGET jspp PROPERTY POSITION_INDEPENDENT_CODE ON)
-    endif()
-
+    set_property(TARGET jspp PROPERTY POSITION_INDEPENDENT_CODE ON)
     target_compile_options(jspp PUBLIC -Wall -Wextra)
 
     if(UNIX AND NOT APPLE)
