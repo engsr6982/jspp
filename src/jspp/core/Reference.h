@@ -3,6 +3,7 @@
 #include "jspp/Macro.h"
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <type_traits>
 #include <vector>

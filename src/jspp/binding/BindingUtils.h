@@ -1,6 +1,9 @@
 #pragma once
 #include "TypeConverter.h"
 #include "jspp/core/Reference.h"
+#include "jspp/core/Value.h"
+
+#include <array>
 
 namespace jspp::binding {
 

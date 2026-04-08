@@ -5,6 +5,8 @@
 
 #include "jspp-backend/traits/TraitScope.h"
 
+#include <optional>
+
 namespace jspp {
 
 class Engine;

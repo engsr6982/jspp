@@ -4,8 +4,9 @@
 #include "jspp/core/ValueHelper.h"
 
 #include <algorithm>
+#include <iterator>
 #include <stdexcept>
-
+#include <vector>
 
 namespace jspp {
 
