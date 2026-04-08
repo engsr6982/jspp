@@ -9,6 +9,7 @@ project(jspp CXX)
 # ==============================================================================
 # Options
 # ==============================================================================
+set(ALLOWED_BACKENDS quickjs v8 stub)
 set(JSPP_BACKEND "v8" CACHE STRING "Select JS backend: v8 or quickjs")
 
 set(JSPP_EXTERNAL_INC "" CACHE PATH "Optional: Path to JS engine headers")
@@ -18,13 +19,17 @@ message(STATUS "[jspp] Backend: ${JSPP_BACKEND}")
 message(STATUS "[jspp] External Inc: ${JSPP_EXTERNAL_INC}")
 message(STATUS "[jspp] External Lib: ${JSPP_EXTERNAL_LIB}")
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+if(NOT ${JSPP_BACKEND} IN_LIST ALLOWED_BACKENDS)
+    message(FATAL_ERROR "Backend '${JSPP_BACKEND}' is not valid. Must be one of: ${ALLOWED_BACKENDS}")
+endif()
+
 
 # ==============================================================================
 # Global Settings
 # ==============================================================================
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
@@ -42,13 +47,12 @@ target_include_directories(jspp PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 target_compile_definitions(jspp PUBLIC "$<$<CONFIG:Debug>:JSPP_DEBUG>")
 
-# backend specific options
-if (${JSPP_BACKEND} STREQUAL "v8")
-    include(src-v8/Configure.cmake)
-elseif(${JSPP_BACKEND} STREQUAL "quickjs")
-    include(src-quickjs/Configure.cmake)
+
+set(BACKEND_CONFIGURE_FILE "${CMAKE_CURRENT_SOURCE_DIR}/src-${JSPP_BACKEND}/Configure.cmake")
+if (EXISTS ${BACKEND_CONFIGURE_FILE})
+    include(${BACKEND_CONFIGURE_FILE})
 else()
-    message(FATAL_ERROR "Invalid backend: ${JSPP_BACKEND}")
+    message(FATAL_ERROR "Backend configuration file not found: ${BACKEND_CONFIGURE_FILE}")
 endif()
 
 
