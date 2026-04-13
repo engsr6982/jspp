@@ -2,10 +2,10 @@ message(STATUS "[jspp] Configuring QuickJS Backend")
 
 target_compile_definitions(jspp PUBLIC JSPP_BACKEND_QUICKJS)
 
-file(GLOB_RECURSE QJS_SRC "src-quickjs/*.cc")
-target_sources(jspp PRIVATE ${QJS_SRC})
+# set source and include directory
+file(GLOB_RECURSE QUICKJS_SRC "src-quickjs/*.cc")
+target_sources(jspp PRIVATE ${QUICKJS_SRC})
 target_include_directories(jspp PUBLIC "src-quickjs")
-
 
 set(BUILD_EXECUTABLES OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTS OFF CACHE BOOL "" FORCE)

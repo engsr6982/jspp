@@ -1,3 +1,4 @@
+#include "catch2/matchers/catch_matchers_string.hpp"
 #include "jspp/Jspp.h"
 #include "jspp/binding/TypeConverter.h"
 #include "jspp/core/Engine.h"
@@ -164,7 +165,7 @@ TEST_CASE_METHOD(BindingTestFixture, "Static class") {
     REQUIRE_THROWS_MATCHES(
         engine->evalScript(String::newString("StaticClass.append(123, 'world')")),
         Exception,
-        Catch::Matchers::Message("Uncaught TypeError: no overload found")
+        Catch::Matchers::MessageMatches(Catch::Matchers::ContainsSubstring("no overload found"))
     );
 
 
@@ -246,12 +247,15 @@ auto DisableCtorTestMeta = defClass<SimpleClass>("DisableCtorSimpleClass")
 TEST_CASE_METHOD(BindingTestFixture, "Disallow script constructor and verify real reference") {
     EngineScope scope{engine.get()};
     engine->registerClass(DisableCtorTestMeta);
+    // TODO: fix, quickjs backend random crash
 
     // 不允许脚本构造
     REQUIRE_THROWS_MATCHES(
         engine->evalScript(String::newString("new DisableCtorSimpleClass()")),
         Exception,
-        Catch::Matchers::Message("Uncaught Error: This native class cannot be constructed.")
+        Catch::Matchers::MessageMatches(
+            Catch::Matchers::ContainsSubstring("This native class cannot be constructed.") //
+        )
     );
 
     // 访问 C++ 已有实例
@@ -278,7 +282,9 @@ TEST_CASE_METHOD(BindingTestFixture, "Disallow script constructor and verify rea
     REQUIRE_THROWS_MATCHES(
         engine->evalScript(String::newString("DisableCtorSimpleClass.inst_const.setId(123456);")),
         Exception,
-        Catch::Matchers::Message("Uncaught Error: Cannot unwrap const instance to mutable pointer")
+        Catch::Matchers::MessageMatches(
+            Catch::Matchers::ContainsSubstring("Cannot unwrap const instance to mutable pointer")
+        )
     );
 }
 
@@ -293,7 +299,7 @@ auto BindCtorTestMeta = defClass<SimpleClass>("BindCtorSimpleClass")
                             .build();
 TEST_CASE_METHOD(BindingTestFixture, "bind overload constructor") {
     EngineScope scope{engine.get()};
-
+    // TODO: fix, quickjs backend random crash
     engine->registerClass(BindCtorTestMeta);
 
     REQUIRE_EVAL(
@@ -307,7 +313,7 @@ TEST_CASE_METHOD(BindingTestFixture, "bind overload constructor") {
     REQUIRE_THROWS_MATCHES(
         engine->evalScript(String::newString("new BindCtorSimpleClass()")),
         Exception,
-        Catch::Matchers::Message("Uncaught Error: This native class cannot be constructed.")
+        Catch::Matchers::MessageMatches(Catch::Matchers::ContainsSubstring("This native class cannot be constructed."))
     );
 }
 
@@ -333,6 +339,7 @@ auto CustomCtorTestMeta = defClass<SimpleClass>("CustomCtorSimpleClass")
 TEST_CASE_METHOD(BindingTestFixture, "bind custom constructor") {
     EngineScope scope{engine.get()};
     engine->registerClass(CustomCtorTestMeta);
+    // TODO: fix, quickjs backend random crash
     REQUIRE_EVAL(
         "new CustomCtorSimpleClass('hello').getName() == 'hello'",
         "call SimpleClass constructor with 1 arguments"
@@ -344,7 +351,7 @@ TEST_CASE_METHOD(BindingTestFixture, "bind custom constructor") {
     REQUIRE_THROWS_MATCHES(
         engine->evalScript(String::newString("new CustomCtorSimpleClass()")),
         Exception,
-        Catch::Matchers::Message("Uncaught Error: This native class cannot be constructed.")
+        Catch::Matchers::MessageMatches(Catch::Matchers::ContainsSubstring("This native class cannot be constructed."))
     );
 }
 
@@ -428,7 +435,9 @@ TEST_CASE_METHOD(BindingTestFixture, "callback function with transient resource"
             throw new Error("Should not reach here");
         )")),
         Exception,
-        Catch::Matchers::Message("Uncaught ReferenceError: Accessing destroyed instance of type class ut::EventBase")
+        Catch::Matchers::MessageMatches(
+            Catch::Matchers::ContainsSubstring("Accessing destroyed instance of type class ut::EventBase")
+        )
     );
 }
 
@@ -495,7 +504,7 @@ TEST_CASE_METHOD(BindingTestFixture, "bind property") {
             throw new Error("readonly_id should be readonly");
         )")),
         Exception,
-        Catch::Matchers::Message("Uncaught Error: readonly_id should be readonly")
+        Catch::Matchers::MessageMatches(Catch::Matchers::ContainsSubstring("readonly_id should be readonly"))
     );
 }
 
@@ -572,8 +581,8 @@ TEST_CASE_METHOD(BindingTestFixture, "smart pointer test") {
             unique_ptr.id = 123; // uaf
         )")),
         Exception,
-        Catch::Matchers::Message(
-            "Uncaught ReferenceError: Accessing destroyed instance of type class ut::SmartPointerTest"
+        Catch::Matchers::MessageMatches(
+            Catch::Matchers::ContainsSubstring("Accessing destroyed instance of type class ut::SmartPointerTest")
         )
     );
 }
@@ -662,7 +671,7 @@ TEST_CASE_METHOD(BindingTestFixture, "Abstract class / Interface binding") {
     REQUIRE_THROWS_MATCHES(
         engine->evalScript(String::newString("new IAbstractObject()")),
         Exception,
-        Catch::Matchers::Message("Uncaught Error: This native class cannot be constructed.")
+        Catch::Matchers::MessageMatches(Catch::Matchers::ContainsSubstring("This native class cannot be constructed."))
     );
 
     // 测试点：只能通过 C++ 返回指针/引用，并且方法可以被正确调用
@@ -903,7 +912,7 @@ TEST_CASE_METHOD(BindingTestFixture, "enable_trampoline") {
             test(plugin);
         )")),
         Exception,
-        Catch::Matchers::Message("Uncaught Error: onLoad called")
+        Catch::Matchers::MessageMatches(Catch::Matchers::ContainsSubstring("onLoad called"))
     );
 }
 

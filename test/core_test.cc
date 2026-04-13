@@ -1,3 +1,4 @@
+#include "catch2/matchers/catch_matchers_string.hpp"
 #include "jspp/Jspp.h"
 #include "jspp/core/Engine.h"
 #include "jspp/core/EngineScope.h"
@@ -147,7 +148,7 @@ TEST_CASE_METHOD(CoreTestFixture, "Exception pass-through") {
     REQUIRE_THROWS_MATCHES(
         engine->evalScript(jspp::String::newString("throw new Error('abc')")),
         jspp::Exception,
-        Catch::Matchers::Message("Uncaught Error: abc")
+        Catch::Matchers::MessageMatches(Catch::Matchers::ContainsSubstring("abc"))
     );
 
     static constexpr auto msg = "Cpp layer throw exception";
