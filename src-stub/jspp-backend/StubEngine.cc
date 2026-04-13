@@ -60,7 +60,7 @@ Local<Object> Engine::globalThis() const {
     throw Exception("Not implemented");
 }
 
-Local<Function> Engine::registerClass(ClassMeta const& meta) {
+Local<Value> Engine::registerClass(ClassMeta const& meta) {
     auto engine = asEngine();
     if (engine->registeredClasses_.contains(meta.name_)) {
         throw std::logic_error("Class already registered: " + meta.name_);

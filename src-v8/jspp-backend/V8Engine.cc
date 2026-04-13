@@ -149,7 +149,7 @@ void Engine::gc() { isolate_->LowMemoryNotification(); }
 
 Local<Object> Engine::globalThis() const { return ValueHelper::wrap<Object>(context_.Get(isolate_)->Global()); }
 
-Local<Function> Engine::registerClass(ClassMeta const& meta) {
+Local<Value> Engine::registerClass(ClassMeta const& meta) {
     auto engine = asEngine();
     if (engine->registeredClasses_.contains(meta.name_)) {
         throw std::logic_error("Class already registered: " + meta.name_);

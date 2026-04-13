@@ -48,8 +48,9 @@ public:
 
     /**
      * Register a binding class and mount it to globalThis
+     * @return if the class is static class, return object, else return class constructor
      */
-    Local<Function> registerClass(ClassMeta const& meta);
+    Local<Value> registerClass(ClassMeta const& meta);
 
     Local<Object> registerEnum(EnumMeta const& meta);
 
