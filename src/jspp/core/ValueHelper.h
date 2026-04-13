@@ -11,7 +11,7 @@ struct ValueHelper {
     ValueHelper() = delete;
 
     template <concepts::WrapType T>
-    [[nodiscard]] inline static auto unwrap(Local<T> value) {
+    [[nodiscard]] inline static auto unwrap(Local<T> const& value) {
         return value.val; // friend
     }
 

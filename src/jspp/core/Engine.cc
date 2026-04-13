@@ -43,6 +43,7 @@ bool Engine::isDestroying() const { return isDestroying_; }
 
 Local<Value> Engine::evalScript(Local<String> const& code) { return evalScript(code, String::newString("<eval>")); }
 
+// TODO: move to backend
 Local<Value> Engine::loadFile(std::filesystem::path const& path) {
     if (isDestroying()) return {};
     if (!std::filesystem::exists(path)) {

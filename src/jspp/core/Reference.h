@@ -39,8 +39,8 @@ private:                                                                        
 #define SPECALIZATION_AS_VALUE(VALUE)                                                                                  \
 public:                                                                                                                \
     Local<Value> asValue() const;                                                                                      \
-                 operator Local<Value>() const { return asValue(); }                                                   \
-    bool         operator==(Local<VALUE> const& other) const { return operator==(other.asValue()); }
+    inline       operator Local<Value>() const { return asValue(); }                                                   \
+    inline bool  operator==(Local<VALUE> const& other) const { return operator==(other.asValue()); }
 
 #define DECL_BACKEND_IMPL_TYPE(VALUE)                                                                                  \
 private:                                                                                                               \
