@@ -1,6 +1,6 @@
 # On the Windows platform, most v8_monolith.lib are MT runtime
 # Forcing a unified MT runtime here to avoid runtime conflicts with test frameworks like catch2
-if(WIN32)
+if(WIN32 AND ${JSPP_BACKEND} STREQUAL "v8")
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
     set_target_properties(jspp PROPERTIES
@@ -31,12 +31,7 @@ add_executable(jspp_test ${TEST_FILES})
 
 target_link_libraries(jspp_test PRIVATE jspp Catch2::Catch2)
 
-set(V8_STATIC_LIB "" CACHE FILEPATH "Path to V8 static library")
-if(V8_STATIC_LIB AND EXISTS "${V8_STATIC_LIB}")
-    target_link_libraries(jspp_test PRIVATE "${V8_STATIC_LIB}")
-endif()
-
-if(WIN32)
+if(WIN32 AND ${JSPP_BACKEND} STREQUAL "v8")
     target_link_libraries(jspp_test PRIVATE winmm advapi32 dbghelp)
 
     set_target_properties(jspp_test PROPERTIES
