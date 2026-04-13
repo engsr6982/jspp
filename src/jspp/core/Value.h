@@ -6,6 +6,7 @@
 #include <string_view>
 
 #include "jspp-backend/traits/TraitValue.h"
+#include "jspp-backend/traits/TraitEngine.h"
 
 namespace jspp {
 
@@ -104,6 +105,9 @@ class Engine; // forward declaration
 class Arguments {
     using BackendImpl = internal::ImplType<Arguments>::type;
     BackendImpl impl_;
+
+    friend Engine;
+    friend internal::ImplType<Engine>::type;
 
 public:
     explicit Arguments(BackendImpl impl); // for Function、Engine、BackendEngineImpl
