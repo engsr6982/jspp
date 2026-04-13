@@ -42,7 +42,10 @@ Global<T>& Global<T>::operator=(Global<T>&& other) noexcept {
 
 template <typename T>
 Global<T>::~Global() {
-    reset();
+    if (!isEmpty()) {
+        EngineScope lock{impl.engine_};
+        reset();
+    }
 }
 
 template <typename T>
@@ -111,7 +114,10 @@ Weak<T>& Weak<T>::operator=(Weak<T>&& other) noexcept {
 
 template <typename T>
 Weak<T>::~Weak() {
-    reset();
+    if (!isEmpty()) {
+        EngineScope lock{impl.engine_};
+        reset();
+    }
 }
 
 template <typename T>
