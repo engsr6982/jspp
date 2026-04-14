@@ -53,6 +53,7 @@ protected:
     Local<Object> newClassPrototype(ClassMeta const& meta);
 
     static void NativeClassFinalizer(JSRuntime* runtime, JSValueConst value);
+    static void NativeClassGcMarker(JSRuntime* runtime, JSValueConst value, JS_MarkFunc* markFunc);
 
     friend class QjsEngineScope;
     friend class QjsExitEngineScope;
