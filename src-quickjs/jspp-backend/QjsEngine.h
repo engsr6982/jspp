@@ -19,6 +19,7 @@ struct ClassMeta;
 
 namespace jspp::qjs_backend {
 
+class JobQueue;
 
 class QjsEngine {
 public:
@@ -66,6 +67,8 @@ protected:
     JSContext* context_{nullptr};
 
     mutable std::recursive_mutex mutex_{};
+
+    std::unique_ptr<JobQueue> queue_{nullptr};
 
     int              pauseGcCount_{0};
     std::atomic_bool pumpScheduled_{false};

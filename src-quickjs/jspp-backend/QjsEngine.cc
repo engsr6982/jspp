@@ -12,6 +12,8 @@
 #include "jspp/core/TrackedHandle.h"
 #include "jspp/core/Value.h"
 #include "jspp/core/ValueHelper.h"
+#include "queue/JobQueue.h"
+
 #include "quickjs.h"
 
 
@@ -41,6 +43,8 @@ QjsEngine::QjsEngine() {
     if (!context_) {
         throw std::runtime_error("Failed to create JS context");
     }
+
+    queue_ = std::make_unique<JobQueue>();
 
     {
         JSClassDef pointerClass{};
@@ -89,6 +93,7 @@ QjsEngine::~QjsEngine() { dispose(); }
 
 void QjsEngine::dispose() {
     if (!context_) return;
+    queue_.reset();
     {
         EngineScope scope(asEngine());
 
@@ -100,6 +105,7 @@ void QjsEngine::dispose() {
 
         JS_FreeAtom(context_, nativeFunctionTag_);
         JS_FreeAtom(context_, toStringTagSymbolAtom_);
+        // JS_ResetUncatchableError(context_);
         JS_RunGC(runtime_);
     }
     JS_FreeContext(context_);
@@ -114,7 +120,16 @@ void QjsEngine::pumpPendingJobs() {
     }
     bool exc = false;
     if (JS_IsJobPending(runtime_) && pumpScheduled_.compare_exchange_strong(exc, true)) {
-        // TODO: process pending jobs
+        queue_->postTask(
+            [](void* data) {
+                auto        engine = static_cast<Engine*>(data);
+                JSContext*  ctx    = nullptr;
+                EngineScope lock(engine);
+                while (JS_ExecutePendingJob(engine->runtime_, &ctx) > 0) {}
+                engine->pumpScheduled_ = false;
+            },
+            this
+        );
     }
 }
 
@@ -549,7 +564,9 @@ Local<Object> QjsEngine::newClassPrototype(ClassMeta const& meta) {
                 assert(id != JS_INVALID_CLASS_ID);
 
                 auto payload = static_cast<InstancePayload*>(JS_GetOpaque(args.impl_.thiz_, id));
-                assert(payload);
+                if (!payload) [[unlikely]] {
+                    throw Exception{"Method called on incompatible receiver", ExceptionType::TypeError};
+                }
 
                 if (!ensurePrototypeSignature(payload->getDefine(), meta)) [[unlikely]] {
                     throw Exception{"Class signature mismatch", ExceptionType::TypeError};
@@ -580,7 +597,9 @@ Local<Object> QjsEngine::newClassPrototype(ClassMeta const& meta) {
                 assert(id != JS_INVALID_CLASS_ID);
 
                 auto payload = static_cast<InstancePayload*>(JS_GetOpaque(args.impl_.thiz_, id));
-                assert(payload);
+                if (!payload) [[unlikely]] {
+                    throw Exception{"Getter called on incompatible receiver", ExceptionType::TypeError};
+                }
 
                 if (!ensurePrototypeSignature(payload->getDefine(), meta)) [[unlikely]] {
                     throw Exception{"Class signature mismatch", ExceptionType::TypeError};
@@ -601,7 +620,9 @@ Local<Object> QjsEngine::newClassPrototype(ClassMeta const& meta) {
                     assert(id != JS_INVALID_CLASS_ID);
 
                     auto payload = static_cast<InstancePayload*>(JS_GetOpaque(args.impl_.thiz_, id));
-                    assert(payload);
+                    if (!payload) [[unlikely]] {
+                        throw Exception{"Setter called on incompatible receiver", ExceptionType::TypeError};
+                    }
 
                     if (!ensurePrototypeSignature(payload->getDefine(), meta)) [[unlikely]] {
                         throw Exception{"Class signature mismatch", ExceptionType::TypeError};
