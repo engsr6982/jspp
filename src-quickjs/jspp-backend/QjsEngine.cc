@@ -213,7 +213,7 @@ Local<Value> Engine::registerClass(ClassMeta const& meta) {
     classDef.finalizer  = NativeClassFinalizer;
     classDef.gc_mark    = NativeClassGcMarker;
 
-    JSClassID id;
+    JSClassID id{JS_INVALID_CLASS_ID};
     {
         // alloc classId
         assert(!classIds_.contains(&meta));
