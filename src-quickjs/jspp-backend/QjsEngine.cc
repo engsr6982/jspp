@@ -187,10 +187,6 @@ void qjs_backend::QjsEngine::NativeClassFinalizer(JSRuntime*, JSValueConst value
     }
 }
 
-void qjs_backend::QjsEngine::NativeClassGcMarker(JSRuntime* runtime, JSValueConst value, JS_MarkFunc* markFunc) {
-    // TODO: implement this
-}
-
 Local<Value> Engine::registerClass(ClassMeta const& meta) {
     auto engine = asEngine();
     if (engine->registeredClasses_.contains(meta.name_)) {
@@ -211,7 +207,6 @@ Local<Value> Engine::registerClass(ClassMeta const& meta) {
     JSClassDef classDef{};
     classDef.class_name = meta.name_.c_str();
     classDef.finalizer  = NativeClassFinalizer;
-    classDef.gc_mark    = NativeClassGcMarker;
 
     JSClassID id{JS_INVALID_CLASS_ID};
     {
