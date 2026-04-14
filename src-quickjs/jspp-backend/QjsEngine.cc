@@ -85,7 +85,10 @@ QjsEngine::QjsEngine() {
 #endif
 }
 
-QjsEngine::~QjsEngine() {
+QjsEngine::~QjsEngine() { dispose(); }
+
+void QjsEngine::dispose() {
+    if (!context_) return;
     {
         EngineScope scope(asEngine());
 
@@ -93,13 +96,16 @@ QjsEngine::~QjsEngine() {
             JS_FreeValue(context_, pair.first);
             JS_FreeValue(context_, pair.second);
         }
+        classConstructors_.clear();
 
         JS_FreeAtom(context_, nativeFunctionTag_);
         JS_FreeAtom(context_, toStringTagSymbolAtom_);
         JS_RunGC(runtime_);
     }
     JS_FreeContext(context_);
+    context_ = nullptr;
     JS_FreeRuntime(runtime_);
+    runtime_ = nullptr;
 }
 
 void QjsEngine::pumpPendingJobs() {

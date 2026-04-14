@@ -29,6 +29,8 @@ protected:
 
     ~QjsEngine();
 
+    void dispose();
+
 public:
     // qjs backend specific
     void pumpPendingJobs();

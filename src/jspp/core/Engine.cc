@@ -25,16 +25,18 @@ Engine::~Engine() {
     {
         EngineScope scope(this);
 
-        ITrackedHandle* current = trackedHead_;
-        while (current) {
+        while (trackedHead_) {
+            ITrackedHandle* current = trackedHead_;
+            trackedHead_ = current->next_;
+            if (trackedHead_) trackedHead_->prev_ = nullptr;
+            current->prev_ = current->next_ = nullptr;
             current->onEngineDestroy();
-            current = current->next_;
         }
-        trackedHead_ = nullptr;
 
         registeredClasses_.clear();
         registeredEnums_.clear();
     }
+    this->dispose();
 }
 
 void Engine::setData(std::shared_ptr<void> data) { userData_ = std::move(data); }
@@ -78,7 +80,6 @@ void Engine::addTrackedHandle(ITrackedHandle* handle) {
     trackedHead_ = handle;
 }
 void Engine::removeTrackedHandle(ITrackedHandle* handle) {
-    if (isDestroying_) return;
     if (handle->prev_) handle->prev_->next_ = handle->next_;
     if (handle->next_) handle->next_->prev_ = handle->prev_;
     if (handle == trackedHead_) trackedHead_ = handle->next_;
