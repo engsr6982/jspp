@@ -71,7 +71,7 @@ Local<String> String::newString(std::string_view sv) {
 Local<Symbol> Symbol::newSymbol() {
     // The Symbol API of QuickJs-NG does not support Symbols without descriptions
     auto ctx = qjs_backend::QjsHelper::currentContextChecked();
-#if QJS_VERSION_MAJOR > 0 || (QJS_VERSION_MAJOR == 0 && QJS_VERSION_MINOR >= 14)
+#if QJS_VERSION_MAJOR > 0 || (QJS_VERSION_MAJOR == 0 && QJS_VERSION_MINOR >= 15)
     // v0.15.0+ fast path (PR #1447) — safe to pass NULL
     auto sym = JS_NewSymbol(ctx, nullptr, false);
     qjs_backend::QjsHelper::rethrowException(sym);
@@ -81,16 +81,12 @@ Local<Symbol> Symbol::newSymbol() {
     // TODO: PR #1447 has been merged into the QuickJs-NG mainline.
     // This fallback code will be removed after the release of v0.15.0.
     // https://github.com/quickjs-ng/quickjs/pull/1447
-    // TODO: Needs fixing, this code does not work.
-    // JS_NewSymbol always returns an exception.
     auto global  = JS_GetGlobalObject(ctx);
     auto symCtor = JS_GetPropertyStr(ctx, global, "Symbol");
-    if (JS_IsException(symCtor)) {
-        JS_FreeValue(ctx, global);
-        qjs_backend::QjsHelper::rethrowException(-1);
-    }
-    auto sym = JS_CallConstructor(ctx, symCtor, 0, nullptr);
     JS_FreeValue(ctx, global);
+    qjs_backend::QjsHelper::rethrowException(symCtor);
+
+    auto sym = JS_Call(ctx, symCtor, JS_UNDEFINED, 0, nullptr);
     JS_FreeValue(ctx, symCtor);
     qjs_backend::QjsHelper::rethrowException(sym);
     EngineScope::currentEngineChecked().pumpPendingJobs();
