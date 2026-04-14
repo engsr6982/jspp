@@ -501,10 +501,13 @@ TEST_CASE_METHOD(BindingTestFixture, "bind property") {
         engine->evalScript(String::newString(R"(
             let obj4 = new PropTest(123, 'hello');
             obj4.readonly_id = 456;
-            throw new Error("readonly_id should be readonly");
+            if (obj4.readonly_id != 123) throw new Error("readonly_id should be 123");
         )")),
         Exception,
-        Catch::Matchers::MessageMatches(Catch::Matchers::ContainsSubstring("readonly_id should be readonly"))
+        Catch::Matchers::MessageMatches(
+            Catch::Matchers::ContainsSubstring("readonly_id should be readonly") || // v8
+            Catch::Matchers::ContainsSubstring("no setter for property")            // quickjs
+        )
     );
 }
 
