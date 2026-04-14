@@ -544,7 +544,7 @@ bool ensurePrototypeSignature(ClassMeta const* meta, ClassMeta const* target) {
         if (meta == target) {
             return true;
         }
-        meta = target->base_;
+        meta = meta->base_;
     }
     return false;
 }
