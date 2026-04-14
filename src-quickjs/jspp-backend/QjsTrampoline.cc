@@ -1,9 +1,11 @@
+#include "QjsHelper.h"
 #include "jspp/core/Engine.h"
 #include "jspp/core/Exception.h"
 #include "jspp/core/Reference.h"
 #include "jspp/core/Trampoline.h"
 #include "jspp/core/Value.h"
 #include "jspp/core/ValueHelper.h"
+#include "quickjs.h"
 
 
 namespace jspp {
@@ -17,13 +19,13 @@ Local<Value> enable_trampoline::getOverride(Local<String> const& methodName) con
     auto overrideFunc = This.get(methodName);
     if (overrideFunc.isFunction()) {
         auto func = overrideFunc.asFunction();
-
-        // TODO: please implement this
-
-        // Note: It is necessary to check whether the function nativeFunctionTag_ exists.
-        // If it exists, it means it is a C method, the script has not been overridden, return directly;
-        // otherwise, return the method after the script has been overridden.
-        throw Exception{"Not implemented yet"};
+        auto code =
+            JS_HasProperty(engine_->context_, qjs_backend::QjsHelper::peekValue(func), engine_->nativeFunctionTag_);
+        qjs_backend::QjsHelper::rethrowException(code);
+        if (code == 1) {
+            return {}; // has native function tag
+        }
+        return func;
     }
     return {};
 }
