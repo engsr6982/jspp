@@ -201,7 +201,7 @@ public:
 };
 auto meta = jspp::binding::defClass<PluginTrampoline>("Plugin")
     .ctor()
-    .implements<Plugin>() // 多继承，需要声明实现的接口(类)
+    .implements<Plugin>() // Multiple inheritance; declare the implemented interface (class)
     .method("bootstrap", &PluginTrampoline::bootstrap)
     .build();
 void main() {
@@ -210,7 +210,7 @@ void main() {
     engine->registerClass(meta);
 
     engine->globalThis().set(
-        String::newString("test"), // Multiple inheritance; declare the implemented interface (class)
+        String::newString("test"), //
         Function::newFunction(cpp_func([](Plugin& plugin) {
             plugin.bootstrap();
         }))
