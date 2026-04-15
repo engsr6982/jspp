@@ -78,7 +78,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p deps/v8
-          if[ "$RUNNER_OS" == "Windows" ]; then
+          if [ "$RUNNER_OS" == "Windows" ]; then
             curl -L -o v8.7z ${{ matrix.v8_url }}
             7z x v8.7z -odeps/v8
           else
@@ -95,7 +95,7 @@ jobs:
           CMAKE_ARGS="-DJSPP_BACKEND=${{ matrix.backend }} -DJSPP_BUILD_TESTS=ON"
 
           # 根据矩阵配置编译器
-          if[ "${{ matrix.compiler }}" == "gcc" ]; then
+          if [ "${{ matrix.compiler }}" == "gcc" ]; then
             export CC=gcc
             export CXX=g++
           elif [ "${{ matrix.compiler }}" == "clang" ]; then
