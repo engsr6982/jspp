@@ -38,3 +38,17 @@ if(WIN32 AND ${JSPP_BACKEND} STREQUAL "v8")
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
     )
 endif()
+
+if (${JSPP_BACKEND} STREQUAL "quickjs")
+    set(BUILD_EXECUTABLES OFF CACHE BOOL "" FORCE)
+    set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+
+    set(QUICKJS_PROJ_DIR "${CMAKE_SOURCE_DIR}/deps/quickjs-ng")
+
+    if(EXISTS "${QUICKJS_PROJ_DIR}/CMakeLists.txt")
+        add_subdirectory(${CMAKE_SOURCE_DIR}/deps/quickjs-ng ${CMAKE_BINARY_DIR}/quickjs-ng)
+        target_link_libraries(jspp PUBLIC qjs)
+    else()
+        message(FATAL_ERROR "QuickJS-ng source not found in deps/")
+    endif()
+endif()
