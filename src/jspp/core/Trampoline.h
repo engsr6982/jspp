@@ -2,6 +2,8 @@
 #include "Fwd.h"
 #include "jspp/core/TrackedHandle.h"
 
+#include "jspp-backend/traits/TraitEngine.h"
+
 #include <memory>
 
 namespace jspp {
@@ -9,6 +11,7 @@ namespace jspp {
 
 class enable_trampoline {
     friend class Engine;
+    friend internal::ImplType<Engine>::type;
 
     Engine*                              engine_{nullptr};
     std::shared_ptr<TrackedWeak<Object>> object_{nullptr};

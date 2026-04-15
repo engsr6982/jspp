@@ -1,5 +1,6 @@
 #pragma once
 #include "Concepts.h" // NOLINT
+#include "Fwd.h"
 #include "jspp/Macro.h"
 
 #include <cstdint>
@@ -8,8 +9,8 @@
 #include <type_traits>
 #include <vector>
 
+#include "jspp-backend/traits/TraitEngine.h"
 #include "jspp-backend/traits/TraitReference.h"
-
 
 namespace jspp {
 
@@ -267,6 +268,7 @@ class Global final {
 
     friend Engine;
     friend Weak<T>;
+    friend internal::ImplType<Engine>::type;
 
 public:
     JSPP_DISABLE_COPY(Global);
@@ -303,6 +305,7 @@ class Weak final {
 
     friend Engine;
     friend Global<T>;
+    friend internal::ImplType<Engine>::type;
 
 public:
     JSPP_DISABLE_COPY(Weak);

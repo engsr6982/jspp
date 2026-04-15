@@ -79,6 +79,7 @@ protected:
     // Mark C++ as a bound function to prevent an infinite loop when JS dispatches an override
     JSAtom nativeFunctionTag_{};
     JSAtom toStringTagSymbolAtom_{};
+    JSAtom referenceInternalAtom_{};
 
     std::unordered_map<ClassMeta const*, JSClassID>                   classIds_{};
     std::unordered_map<ClassMeta const*, std::pair<JSValue, JSValue>> classConstructors_{}; // ctor, proto

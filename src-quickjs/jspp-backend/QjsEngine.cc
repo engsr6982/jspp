@@ -10,6 +10,7 @@
 #include "jspp/core/NativeInstance.h"
 #include "jspp/core/Reference.h"
 #include "jspp/core/TrackedHandle.h"
+#include "jspp/core/Trampoline.h"
 #include "jspp/core/Value.h"
 #include "jspp/core/ValueHelper.h"
 #include "queue/JobQueue.h"
@@ -69,13 +70,17 @@ QjsEngine::QjsEngine() {
     {
         EngineScope lock{asEngine()};
 
-        auto nativeTag     = Symbol::newSymbol();
+        auto nativeTag     = Symbol::newSymbol("nativeFunctionTag_");
         nativeFunctionTag_ = JS_ValueToAtom(context_, QjsHelper::peekValue(nativeTag));
 
         auto toStringTag = asEngine()->evalScript(String::newString("(Symbol.toStringTag)"));
         if (toStringTag.isSymbol()) {
             toStringTagSymbolAtom_ = JS_ValueToAtom(context_, QjsHelper::peekValue(toStringTag));
         }
+
+        JSValue refSym         = JS_NewSymbol(context_, "reference_internal", false);
+        referenceInternalAtom_ = JS_ValueToAtom(context_, refSym);
+        JS_FreeValue(context_, refSym);
     }
 
     auto base = asEngine();
@@ -105,7 +110,7 @@ void QjsEngine::dispose() {
 
         JS_FreeAtom(context_, nativeFunctionTag_);
         JS_FreeAtom(context_, toStringTagSymbolAtom_);
-        // JS_ResetUncatchableError(context_);
+        JS_FreeAtom(context_, referenceInternalAtom_);
         JS_RunGC(runtime_);
     }
     JS_FreeContext(context_);
@@ -188,7 +193,22 @@ void qjs_backend::QjsEngine::NativeClassFinalizer(JSRuntime*, JSValueConst value
 }
 
 void qjs_backend::QjsEngine::NativeClassGcMarker(JSRuntime* runtime, JSValueConst value, JS_MarkFunc* markFunc) {
-    // TODO: implement this
+    auto id = JS_GetClassID(value);
+    if (id == JS_INVALID_CLASS_ID) return;
+
+    // Since this callback is only bound to the class we registered, Opaque must be InstancePayload
+    if (auto opaque = JS_GetOpaque(value, id)) {
+        auto payload = static_cast<InstancePayload*>(opaque);
+        if (auto trampoline = payload->getHolder().get_trampoline()) {
+            // If there is a trampoline and a JS object is held
+            if (trampoline->object_ && !trampoline->object_->weak().isEmpty()) {
+                // Directly take out the bottom-level raw JSValue and pass it to JS_MarkValue
+                //  without triggering refcount changes
+                JSValue raw_val = trampoline->object_->weak().impl.ref_;
+                JS_MarkValue(runtime, raw_val, markFunc);
+            }
+        }
+    }
 }
 
 Local<Value> Engine::registerClass(ClassMeta const& meta) {
@@ -350,10 +370,29 @@ InstancePayload* Engine::getInstancePayload(Local<Object> const& obj) const {
 }
 
 bool Engine::trySetReferenceInternal(Local<Object> const& parentObj, Local<Object> const& subObj) {
-    // TODO: please implement this
-    // Implement internal references; this function affects the stability of the trampolining mechanism.
-    // For the v8 backend, parentObj is usually placed into an internal field of subObj.
-    return false;
+    auto engine    = asEngine();
+    auto ctx       = engine->context_;
+    auto parentVal = qjs_backend::QjsHelper::peekValue(parentObj);
+    auto subVal    = qjs_backend::QjsHelper::peekValue(subObj);
+
+    if (JS_IsException(parentVal) || JS_IsException(subVal)) {
+        return false;
+    }
+
+    // Define a hidden property on subObj that points to parentVal
+    int ret = JS_DefinePropertyValue(
+        ctx,
+        subVal,
+        engine->referenceInternalAtom_,
+        qjs_backend::QjsHelper::dupValue(parentVal, ctx),
+        0 // Indicates that this property is non-enumerable, non-writable, and non-configurable
+    );
+
+    if (ret < 0) {
+        qjs_backend::QjsHelper::rethrowException(ret);
+        return false;
+    }
+    return true;
 }
 
 namespace qjs_backend {
