@@ -69,7 +69,10 @@ V8Engine::V8Engine(v8::Isolate* isolate, v8::Local<v8::Context> ctx)
     nativeFunctionTag_ = v8::Global<v8::Private>(isolate_, v8::Private::New(isolate_));
 }
 
-V8Engine::~V8Engine() {
+V8Engine::~V8Engine() { dispose(); }
+
+void V8Engine::dispose() {
+    if (context_.IsEmpty()) return; // Already disposed
     {
         EngineScope scope(asEngine());
 

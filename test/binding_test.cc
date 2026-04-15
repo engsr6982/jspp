@@ -499,14 +499,17 @@ TEST_CASE_METHOD(BindingTestFixture, "bind property") {
     // readonly
     REQUIRE_THROWS_MATCHES(
         engine->evalScript(String::newString(R"(
+            "use strict";
             let obj4 = new PropTest(123, 'hello');
             obj4.readonly_id = 456;
             if (obj4.readonly_id != 123) throw new Error("readonly_id should be 123");
         )")),
         Exception,
         Catch::Matchers::MessageMatches(
-            Catch::Matchers::ContainsSubstring("readonly_id should be readonly") || // v8
-            Catch::Matchers::ContainsSubstring("no setter for property")            // quickjs
+            Catch::Matchers::ContainsSubstring(
+                "Cannot set property readonly_id of #<PropTest> which has only a getter" // v8
+            )
+            || Catch::Matchers::ContainsSubstring("no setter for property") // quickjs
         )
     );
 }

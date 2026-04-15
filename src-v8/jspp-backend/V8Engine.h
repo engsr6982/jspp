@@ -33,6 +33,8 @@ protected:
 
     ~V8Engine();
 
+    void dispose();
+
 public: // v8 backend specific
     [[nodiscard]] v8::Isolate* isolate() const;
 
