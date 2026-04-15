@@ -29,16 +29,17 @@ Engine const* StubEngine::asEngine() const { return static_cast<Engine const*>(t
 StubEngine::StubEngine() {
     // TODO: please init this properly
 
-    constructorSymbol_.reset(Symbol::newSymbol("constructorSymbol_"));
-    nativeFunctionTag_.reset(Symbol::newSymbol("nativeFunctionTag"));
+    // constructorSymbol_.reset(Symbol::newSymbol("constructorSymbol_"));
+    // nativeFunctionTag_.reset(Symbol::newSymbol("nativeFunctionTag"));
 }
 
 StubEngine::~StubEngine() {
     {
         EngineScope scope(asEngine());
 
-        constructorSymbol_.reset();
-        nativeFunctionTag_.reset();
+        // TODO: free all resources
+        // constructorSymbol_.reset();
+        // nativeFunctionTag_.reset();
     }
 }
 

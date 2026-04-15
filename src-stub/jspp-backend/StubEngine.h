@@ -1,8 +1,6 @@
 #pragma once
 #include "jspp/Macro.h"
 #include "jspp/core/Fwd.h"
-#include "jspp/core/Reference.h"
-#include "jspp/core/Value.h"
 
 #include <string_view>
 
@@ -43,11 +41,11 @@ protected:
     friend class StubStackFrameScope;
     friend struct StubHelper;
 
-    // This symbol is used to mark the construction of objects from C++ (with special logic).
-    Global<Symbol> constructorSymbol_{};
+    // TODO: This symbol is used to mark the construction of objects from C++ (with special logic).
+    // Global<Symbol> constructorSymbol_{};
 
-    // Mark C++ as a bound function to prevent an infinite loop when JS dispatches an override
-    Global<Symbol> nativeFunctionTag_{};
+    // TODO: Mark C++ as a bound function to prevent an infinite loop when JS dispatches an override
+    // Global<Symbol> nativeFunctionTag_{};
 };
 
 

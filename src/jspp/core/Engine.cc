@@ -27,7 +27,7 @@ Engine::~Engine() {
 
         while (trackedHead_) {
             ITrackedHandle* current = trackedHead_;
-            trackedHead_ = current->next_;
+            trackedHead_            = current->next_;
             if (trackedHead_) trackedHead_->prev_ = nullptr;
             current->prev_ = current->next_ = nullptr;
             current->onEngineDestroy();
@@ -36,7 +36,12 @@ Engine::~Engine() {
         registeredClasses_.clear();
         registeredEnums_.clear();
     }
-    this->dispose();
+    auto tryDispose = []<typename T>(T* t) {
+        if constexpr (requires { t->dispose(); }) {
+            t->dispose();
+        }
+    };
+    tryDispose(this);
 }
 
 void Engine::setData(std::shared_ptr<void> data) { userData_ = std::move(data); }
