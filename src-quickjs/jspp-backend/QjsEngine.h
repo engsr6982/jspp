@@ -25,9 +25,9 @@ class QjsEngine {
 public:
     JSPP_DISABLE_COPY(QjsEngine);
 
-protected:
     explicit QjsEngine();
 
+protected:
     ~QjsEngine();
 
     void dispose();

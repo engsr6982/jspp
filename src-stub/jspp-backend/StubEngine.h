@@ -16,9 +16,9 @@ class StubEngine {
 public:
     JSPP_DISABLE_COPY(StubEngine);
 
-protected:
     explicit StubEngine();
 
+protected:
     ~StubEngine();
 
 public:

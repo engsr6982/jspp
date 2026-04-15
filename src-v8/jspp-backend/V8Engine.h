@@ -18,7 +18,6 @@ class V8Engine {
 public:
     JSPP_DISABLE_COPY(V8Engine);
 
-protected:
     /**
      * Create an engine instance, internally automatically new Isolate and Context
      */
@@ -31,6 +30,7 @@ protected:
      */
     explicit V8Engine(v8::Isolate* isolate, v8::Local<v8::Context> ctx);
 
+protected:
     ~V8Engine();
 
     void dispose();
