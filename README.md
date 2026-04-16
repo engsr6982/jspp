@@ -2,6 +2,12 @@
 
 **[English](./README.md)** | **[简体中文](./README_ZH.md)**
 
+[![CI](https://img.shields.io/github/actions/workflow/status/engsr6982/jspp/ci.yml?branch=main&style=for-the-badge&logo=github&label=CI)](https://github.com/engsr6982/jspp/actions)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge&logo=open-source-initiative)](LICENSE)
+[![C++](https://img.shields.io/badge/C%2B%2B-20-00599C?style=for-the-badge&logo=c%2B%2B)](https://en.cppreference.com/w/cpp/17)
+[![QuickJS](https://img.shields.io/badge/QuickJS-NG-ff69b4?style=for-the-badge)](https://github.com/quickjs-ng/quickjs)
+[![V8](https://img.shields.io/badge/V8-12.x-4B8BBE?style=for-the-badge&logo=v8)](https://v8.dev/)
+
 ---
 
 **jspp** is a modern C++ wrapper library for JavaScript engines. Its design is deeply inspired by `pybind11`, aiming to completely eliminate the tedious "glue code" required when integrating C++ with JavaScript.
