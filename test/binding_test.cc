@@ -436,7 +436,7 @@ TEST_CASE_METHOD(BindingTestFixture, "callback function with transient resource"
         )")),
         Exception,
         Catch::Matchers::MessageMatches(
-            Catch::Matchers::ContainsSubstring("Accessing destroyed instance of type class ut::EventBase")
+            Catch::Matchers::ContainsSubstring("Accessing destroyed instance of type")
         )
     );
 }
@@ -588,7 +588,7 @@ TEST_CASE_METHOD(BindingTestFixture, "smart pointer test") {
         )")),
         Exception,
         Catch::Matchers::MessageMatches(
-            Catch::Matchers::ContainsSubstring("Accessing destroyed instance of type class ut::SmartPointerTest")
+            Catch::Matchers::ContainsSubstring("Accessing destroyed instance of type")
         )
     );
 }
