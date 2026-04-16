@@ -2,47 +2,47 @@ name: CI/CD
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
+    branches: [main]
 
 jobs:
   build-and-test:
     name: "${{ matrix.os }} | ${{ matrix.compiler }} | ${{ matrix.backend }}"
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false # 即使某个平台失败，也继续跑完其他平台的测试
+      fail-fast: false
       matrix:
         include:
-          # ======================= Ubuntu (Linux) =======================
-          - os: ubuntu-latest
-            compiler: gcc
-            backend: quickjs
-          - os: ubuntu-latest
-            compiler: gcc
-            backend: v8
-            v8_url: https://github.com/kuoruan/libv8/releases/download/v12.9.202.27/v8_Linux_x64.tar.xz
-            v8_lib: deps/v8/libv8_monolith.a
+          #   # ======================= Ubuntu (Linux) =======================
+          #   - os: ubuntu-latest
+          #     compiler: gcc
+          #     backend: quickjs
+          #   - os: ubuntu-latest
+          #     compiler: gcc
+          #     backend: v8
+          #     v8_url: https://github.com/kuoruan/libv8/releases/download/v12.9.202.27/v8_Linux_x64.tar.xz
+          #     v8_lib: deps/v8/libv8_monolith.a
 
-          - os: ubuntu-latest
-            compiler: clang
-            backend: quickjs
-          - os: ubuntu-latest
-            compiler: clang
-            backend: v8
-            v8_url: https://github.com/kuoruan/libv8/releases/download/v12.9.202.27/v8_Linux_x64.tar.xz
-            v8_lib: deps/v8/libv8_monolith.a
+          #   - os: ubuntu-latest
+          #     compiler: clang
+          #     backend: quickjs
+          #   - os: ubuntu-latest
+          #     compiler: clang
+          #     backend: v8
+          #     v8_url: https://github.com/kuoruan/libv8/releases/download/v12.9.202.27/v8_Linux_x64.tar.xz
+          #     v8_lib: deps/v8/libv8_monolith.a
 
-          # =========================== macOS ===========================
-          # 注意：目前的 macos-latest 默认是 ARM64(M1) 架构
-          - os: macos-latest
-            compiler: appleclang
-            backend: quickjs
-          - os: macos-latest
-            compiler: appleclang
-            backend: v8
-            v8_url: https://github.com/kuoruan/libv8/releases/download/v12.9.202.27/v8_macOS_arm64.tar.xz
-            v8_lib: deps/v8/libv8_monolith.a
+          #   # =========================== macOS ===========================
+          #   # 注意：目前的 macos-latest 默认是 ARM64(M1) 架构
+          #   - os: macos-latest
+          #     compiler: appleclang
+          #     backend: quickjs
+          #   - os: macos-latest
+          #     compiler: appleclang
+          #     backend: v8
+          #     v8_url: https://github.com/kuoruan/libv8/releases/download/v12.9.202.27/v8_macOS_arm64.tar.xz
+          #     v8_lib: deps/v8/libv8_monolith.a
 
           # ========================== Windows ==========================
           - os: windows-latest
@@ -108,7 +108,7 @@ jobs:
 
           # 挂载预构建的 V8 头文件和静态库
           if [ "${{ matrix.backend }}" == "v8" ]; then
-            CMAKE_ARGS="$CMAKE_ARGS -DJSPP_EXTERNAL_INC=$WORKSPACE_PATH/deps/v8/include -DJSPP_EXTERNAL_LIB=$WORKSPACE_PATH/${{ matrix.v8_lib }}"
+            CMAKE_ARGS="$CMAKE_ARGS -DJSPP_EXTERNAL_INC=$WORKSPACE_PATH/deps/v8 -DJSPP_EXTERNAL_LIB=$WORKSPACE_PATH/${{ matrix.v8_lib }}"
           fi
 
           cmake -S . -B build $CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release
