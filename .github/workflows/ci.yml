@@ -22,6 +22,7 @@ jobs:
             compiler: gcc
             backend: v8
             v8_url: https://github.com/kuoruan/libv8/releases/download/v12.9.202.27/v8_Linux_x64.tar.xz
+            v8_inc: deps/v8/include
             v8_lib: deps/v8/libv8_monolith.a
 
           - os: ubuntu-latest
@@ -31,6 +32,7 @@ jobs:
             compiler: clang
             backend: v8
             v8_url: https://github.com/kuoruan/libv8/releases/download/v12.9.202.27/v8_Linux_x64.tar.xz
+            v8_inc: deps/v8/include
             v8_lib: deps/v8/libv8_monolith.a
 
           # =========================== macOS ===========================
@@ -42,6 +44,7 @@ jobs:
             compiler: appleclang
             backend: v8
             v8_url: https://github.com/kuoruan/libv8/releases/download/v12.9.202.27/v8_macOS_arm64.tar.xz
+            v8_inc: deps/v8/include
             v8_lib: deps/v8/libv8_monolith.a
 
           # ========================== Windows ==========================
@@ -52,6 +55,7 @@ jobs:
             compiler: msvc
             backend: v8
             v8_url: https://github.com/kuoruan/libv8/releases/download/v12.9.202.27/v8_Windows_x64.7z
+            v8_inc: deps/v8
             v8_lib: deps/v8/v8_monolith.lib
 
           - os: windows-latest
@@ -61,6 +65,7 @@ jobs:
             compiler: clang-cl
             backend: v8
             v8_url: https://github.com/kuoruan/libv8/releases/download/v12.9.202.27/v8_Windows_x64.7z
+            v8_inc: deps/v8
             v8_lib: deps/v8/v8_monolith.lib
 
     steps:
@@ -108,7 +113,7 @@ jobs:
 
           # 挂载预构建的 V8 头文件和静态库
           if [ "${{ matrix.backend }}" == "v8" ]; then
-            CMAKE_ARGS="$CMAKE_ARGS -DJSPP_EXTERNAL_INC=$WORKSPACE_PATH/deps/v8 -DJSPP_EXTERNAL_LIB=$WORKSPACE_PATH/${{ matrix.v8_lib }}"
+            CMAKE_ARGS="$CMAKE_ARGS -DJSPP_EXTERNAL_INC=$WORKSPACE_PATH/${{ matrix.v8_inc }} -DJSPP_EXTERNAL_LIB=$WORKSPACE_PATH/${{ matrix.v8_lib }}"
           fi
 
           cmake -S . -B build $CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release
