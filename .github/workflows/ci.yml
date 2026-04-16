@@ -14,35 +14,35 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          #   # ======================= Ubuntu (Linux) =======================
-          #   - os: ubuntu-latest
-          #     compiler: gcc
-          #     backend: quickjs
-          #   - os: ubuntu-latest
-          #     compiler: gcc
-          #     backend: v8
-          #     v8_url: https://github.com/kuoruan/libv8/releases/download/v12.9.202.27/v8_Linux_x64.tar.xz
-          #     v8_lib: deps/v8/libv8_monolith.a
+          # ======================= Ubuntu (Linux) =======================
+          - os: ubuntu-latest
+            compiler: gcc
+            backend: quickjs
+          - os: ubuntu-latest
+            compiler: gcc
+            backend: v8
+            v8_url: https://github.com/kuoruan/libv8/releases/download/v12.9.202.27/v8_Linux_x64.tar.xz
+            v8_lib: deps/v8/libv8_monolith.a
 
-          #   - os: ubuntu-latest
-          #     compiler: clang
-          #     backend: quickjs
-          #   - os: ubuntu-latest
-          #     compiler: clang
-          #     backend: v8
-          #     v8_url: https://github.com/kuoruan/libv8/releases/download/v12.9.202.27/v8_Linux_x64.tar.xz
-          #     v8_lib: deps/v8/libv8_monolith.a
+          - os: ubuntu-latest
+            compiler: clang
+            backend: quickjs
+          - os: ubuntu-latest
+            compiler: clang
+            backend: v8
+            v8_url: https://github.com/kuoruan/libv8/releases/download/v12.9.202.27/v8_Linux_x64.tar.xz
+            v8_lib: deps/v8/libv8_monolith.a
 
-          #   # =========================== macOS ===========================
-          #   # 注意：目前的 macos-latest 默认是 ARM64(M1) 架构
-          #   - os: macos-latest
-          #     compiler: appleclang
-          #     backend: quickjs
-          #   - os: macos-latest
-          #     compiler: appleclang
-          #     backend: v8
-          #     v8_url: https://github.com/kuoruan/libv8/releases/download/v12.9.202.27/v8_macOS_arm64.tar.xz
-          #     v8_lib: deps/v8/libv8_monolith.a
+          # =========================== macOS ===========================
+          # 注意：目前的 macos-latest 默认是 ARM64(M1) 架构
+          - os: macos-latest
+            compiler: appleclang
+            backend: quickjs
+          - os: macos-latest
+            compiler: appleclang
+            backend: v8
+            v8_url: https://github.com/kuoruan/libv8/releases/download/v12.9.202.27/v8_macOS_arm64.tar.xz
+            v8_lib: deps/v8/libv8_monolith.a
 
           # ========================== Windows ==========================
           - os: windows-latest
@@ -119,7 +119,6 @@ jobs:
       - name: Run Tests
         shell: bash
         run: |
-          # Windows MSBuild 默认会将产物放至 Release 目录下
           if [ "$RUNNER_OS" == "Windows" ]; then
             ./bin/Release/jspp_test.exe
           else
