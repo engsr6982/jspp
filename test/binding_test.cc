@@ -247,7 +247,6 @@ auto DisableCtorTestMeta = defClass<SimpleClass>("DisableCtorSimpleClass")
 TEST_CASE_METHOD(BindingTestFixture, "Disallow script constructor and verify real reference") {
     EngineScope scope{engine.get()};
     engine->registerClass(DisableCtorTestMeta);
-    // TODO: fix, quickjs backend random crash
 
     // 不允许脚本构造
     REQUIRE_THROWS_MATCHES(
@@ -299,7 +298,6 @@ auto BindCtorTestMeta = defClass<SimpleClass>("BindCtorSimpleClass")
                             .build();
 TEST_CASE_METHOD(BindingTestFixture, "bind overload constructor") {
     EngineScope scope{engine.get()};
-    // TODO: fix, quickjs backend random crash
     engine->registerClass(BindCtorTestMeta);
 
     REQUIRE_EVAL(
@@ -339,7 +337,6 @@ auto CustomCtorTestMeta = defClass<SimpleClass>("CustomCtorSimpleClass")
 TEST_CASE_METHOD(BindingTestFixture, "bind custom constructor") {
     EngineScope scope{engine.get()};
     engine->registerClass(CustomCtorTestMeta);
-    // TODO: fix, quickjs backend random crash
     REQUIRE_EVAL(
         "new CustomCtorSimpleClass('hello').getName() == 'hello'",
         "call SimpleClass constructor with 1 arguments"
@@ -435,9 +432,7 @@ TEST_CASE_METHOD(BindingTestFixture, "callback function with transient resource"
             throw new Error("Should not reach here");
         )")),
         Exception,
-        Catch::Matchers::MessageMatches(
-            Catch::Matchers::ContainsSubstring("Accessing destroyed instance of type")
-        )
+        Catch::Matchers::MessageMatches(Catch::Matchers::ContainsSubstring("Accessing destroyed instance of type"))
     );
 }
 
@@ -587,9 +582,7 @@ TEST_CASE_METHOD(BindingTestFixture, "smart pointer test") {
             unique_ptr.id = 123; // uaf
         )")),
         Exception,
-        Catch::Matchers::MessageMatches(
-            Catch::Matchers::ContainsSubstring("Accessing destroyed instance of type")
-        )
+        Catch::Matchers::MessageMatches(Catch::Matchers::ContainsSubstring("Accessing destroyed instance of type"))
     );
 }
 
