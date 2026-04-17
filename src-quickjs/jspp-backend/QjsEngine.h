@@ -21,6 +21,8 @@ namespace jspp::qjs_backend {
 
 class JobQueue;
 
+inline constexpr std::string_view kFileUrlPrefix = "file://";
+
 class QjsEngine {
 public:
     JSPP_DISABLE_COPY(QjsEngine);
@@ -43,6 +45,7 @@ protected:
     [[nodiscard]] Engine const* asEngine() const;
 
     void setToStringTag(Local<Object>& obj, std::string_view name);
+    bool updateModuleImportMeta(JSModuleDef* def, std::optional<std::string_view> url, std::optional<bool> isMain);
 
     using DataFunctionCallback = Local<Value> (*)(Arguments const& args, void* data1, void* data2);
     Local<Function> newDataFunction(DataFunctionCallback callback, void* data1, void* data2);

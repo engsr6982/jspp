@@ -21,6 +21,10 @@
 #include <array>
 #include <cassert>
 #include <concepts>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <istream>
 #include <type_traits>
 #include <utility>
 
@@ -139,8 +143,45 @@ void QjsEngine::pumpPendingJobs() {
 }
 
 Local<Value> QjsEngine::loadByteCode(std::filesystem::path const& path, bool main) {
-    // TODO: implement this
-    return {};
+    std::ifstream ifs{path, std::ios::binary};
+    if (!ifs) {
+        throw std::runtime_error("Failed to open binary file: " + path.string());
+    }
+    std::vector<uint8_t> bytecode((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+
+    // read bydecode
+    JSValue result = JS_ReadObject(context_, bytecode.data(), bytecode.size(), JS_READ_OBJ_BYTECODE);
+    QjsHelper::rethrowException(result); // SyntaxError
+
+    if (JS_VALUE_GET_TAG(result) == JS_TAG_MODULE) {
+        if (JS_ResolveModule(context_, result) < 0) {
+            JS_FreeValue(context_, result);
+            QjsHelper::rethrowException(-1, "Failed to resolve module");
+        }
+        auto url = path.is_absolute() ? path.string() : std::filesystem::absolute(path).string();
+#ifdef _WIN32
+        std::replace(url.begin(), url.end(), '\\', '/');
+#endif
+        if (!url.starts_with(kFileUrlPrefix)) {
+            url = std::string{kFileUrlPrefix} + url;
+        }
+        auto module = static_cast<JSModuleDef*>(JS_VALUE_GET_PTR(result));
+        updateModuleImportMeta(module, url, main);
+    }
+
+    result = JS_EvalFunction(context_, result);
+    QjsHelper::rethrowException(result);
+
+    // check propmise rejected
+    JSPromiseStateEnum state = JS_PromiseState(context_, result);
+    if (state == JSPromiseStateEnum::JS_PROMISE_REJECTED) {
+        JSValue msg = JS_PromiseResult(context_, result);
+        JS_Throw(context_, msg);
+        QjsHelper::rethrowException(-1);
+    }
+
+    pumpPendingJobs();
+    return ValueHelper::wrap<Value>(result);
 }
 
 PauseGcGuard::PauseGcGuard(Engine* engine) : engine_(engine) { engine_->pauseGcCount_++; }
@@ -407,6 +448,44 @@ void QjsEngine::setToStringTag(Local<Object>& obj, std::string_view name) {
     );
 }
 
+bool QjsEngine::updateModuleImportMeta(
+    JSModuleDef*                    def,
+    std::optional<std::string_view> url,
+    std::optional<bool>             isMain
+) {
+    if (!url.has_value() && !isMain.has_value()) {
+        return false;
+    }
+
+    auto meta = JS_GetImportMeta(context_, def);
+    QjsHelper::rethrowException(meta);
+
+    if (isMain.has_value()) {
+        auto code = JS_DefinePropertyValueStr(context_, meta, "main", JS_NewBool(context_, *isMain), JS_PROP_C_W_E);
+        if (code < 0) { // error
+            JS_FreeValue(context_, meta);
+            QjsHelper::rethrowException(code);
+        }
+    }
+
+    if (url.has_value()) {
+        auto code = JS_DefinePropertyValueStr(
+            context_,
+            meta,
+            "url",
+            JS_NewStringLen(context_, url->data(), url->size()),
+            JS_PROP_C_W_E
+        );
+        if (code < 0) { // error
+            JS_FreeValue(context_, meta);
+            QjsHelper::rethrowException(code);
+        }
+    }
+
+    JS_FreeValue(context_, meta);
+    return true;
+}
+
 Local<Function> QjsEngine::newDataFunction(DataFunctionCallback callback, void* data1, void* data2) {
     static auto newPointerData = [](Engine* engine, void* ptr) {
         if (!ptr) {
@@ -427,8 +506,8 @@ Local<Function> QjsEngine::newDataFunction(DataFunctionCallback callback, void* 
 
     auto fn = JS_NewCFunctionData(
         context_,
-        [](JSContext* ctx, JSValueConst thiz, int argc, JSValueConst* argv, int /* magic */, JSValueConst* data)
-            -> JSValue {
+        [](JSContext* ctx, JSValueConst thiz, int argc, JSValueConst* argv, int /* magic */, JSValueConst* data
+        ) -> JSValue {
             auto engine = static_cast<Engine*>(JS_GetContextOpaque(ctx));
 
             auto data1    = JS_GetOpaque(data[0], engine->pointerDataClassId_);
