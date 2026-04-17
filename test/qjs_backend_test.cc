@@ -9,6 +9,7 @@
 #include "jspp/core/Trampoline.h"
 #include "jspp/core/Value.h"
 
+#include "jspp-backend/queue/JobQueue.h"
 
 #include "jspp/binding/BindingUtils.h"
 #include "jspp/binding/MetaBuilder.h"
@@ -21,9 +22,9 @@
 #include <iostream>
 
 
-struct QjsGCTestFixture {
+struct QjsTestFixture {
     std::unique_ptr<jspp::Engine> engine;
-    explicit QjsGCTestFixture() : engine(std::make_unique<jspp::Engine>()) {}
+    explicit QjsTestFixture() : engine(std::make_unique<jspp::Engine>()) {}
 };
 
 static int g_parent_deleted = 0;
@@ -54,7 +55,7 @@ auto GcParentMeta = jspp::binding::defClass<GcParent>("GcParent")
                         .method("virtualFunc", &GcParent::virtualFunc)
                         .build();
 
-TEST_CASE_METHOD(QjsGCTestFixture, "GC Behavior - Trampoline Cycle Collection") {
+TEST_CASE_METHOD(QjsTestFixture, "GC Behavior - Trampoline Cycle Collection") {
     jspp::EngineScope scope{engine.get()};
     engine->registerClass(GcParentMeta);
     g_parent_deleted = 0;
@@ -79,7 +80,7 @@ TEST_CASE_METHOD(QjsGCTestFixture, "GC Behavior - Trampoline Cycle Collection") 
     REQUIRE(g_parent_deleted == 1);
 }
 
-TEST_CASE_METHOD(QjsGCTestFixture, "GC Behavior - ReturnValuePolicy::kReferenceInternal") {
+TEST_CASE_METHOD(QjsTestFixture, "GC Behavior - ReturnValuePolicy::kReferenceInternal") {
     jspp::EngineScope scope{engine.get()};
     engine->registerClass(GcChildMeta);
     engine->registerClass(GcParentMeta);
@@ -150,9 +151,8 @@ auto DerivedMeta = jspp::binding::defClass<Derived>("Derived")
                        .method("getDerMem", &Derived::getDerMem)
                        .build();
 
-TEST_CASE("Test Qjs class inherit") {
+TEST_CASE_METHOD(QjsTestFixture, "Test Qjs class inherit") {
     using namespace jspp;
-    auto        engine = std::make_unique<Engine>();
     EngineScope lock{engine.get()};
 
     engine->registerClass(BaseMeta);
@@ -210,6 +210,37 @@ TEST_CASE("Test Qjs class inherit") {
         if (derived.base_member != '1234') throw 'expected Derived.base_member'
         if (derived.getMember() != '1234') throw 'expected Derived.getMember()'
     )")));
+}
+
+
+TEST_CASE_METHOD(QjsTestFixture, "JobQueue with promise") {
+    using namespace jspp;
+    EngineScope lock{engine.get()};
+
+    bool done = false;
+    auto test = Function::newFunction([&done](Arguments const& args) -> Local<Value> {
+        REQUIRE(args.length() == 1);
+        REQUIRE(args[0].isBoolean());
+        done = args[0].asBoolean().getValue();
+        return {};
+    });
+
+    engine->globalThis().set(String::newString("setDone"), test);
+
+    engine->evalScript(String::newString(R"(
+        new Promise((resolve, reject) => {
+            resolve();
+        }).then(() => {
+            new Promise((resolve, reject) => {
+                resolve();
+            }).then(() => {
+                setDone(true);
+            });
+        });
+    )"));
+    engine->getJobQueue()->shutdown(true);
+    engine->getJobQueue()->loopAndWait();
+    REQUIRE(done == true);
 }
 
 #endif
