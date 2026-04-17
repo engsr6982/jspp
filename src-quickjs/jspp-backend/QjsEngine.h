@@ -11,6 +11,7 @@ JSPP_WARNING_GUARD_END
 #include <mutex>
 #include <string_view>
 #include <unordered_map>
+#include <optional>
 
 namespace jspp {
 struct ClassMeta;
