@@ -4,7 +4,8 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/engsr6982/jspp/ci.yml?branch=main&style=for-the-badge&logo=github&label=CI)](https://github.com/engsr6982/jspp/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge&logo=open-source-initiative)](LICENSE)
-[![C++](https://img.shields.io/badge/C%2B%2B-20-00599C?style=for-the-badge&logo=c%2B%2B)](https://en.cppreference.com/w/cpp/17)
+[![C++](https://img.shields.io/badge/C%2B%2B-20-00599C?style=for-the-badge&logo=c%2B%2B)](https://en.cppreference.com/w/cpp/20)
+[![Release](https://img.shields.io/github/v/release/engsr6982/jspp?include_prereleases&style=for-the-badge)](https://github.com/engsr6982/jspp/releases)
 [![QuickJS](https://img.shields.io/badge/QuickJS-NG-ff69b4?style=for-the-badge)](https://github.com/quickjs-ng/quickjs)
 [![V8](https://img.shields.io/badge/V8-12.x-4B8BBE?style=for-the-badge&logo=v8)](https://v8.dev/)
 
