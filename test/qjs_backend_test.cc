@@ -243,4 +243,41 @@ TEST_CASE_METHOD(QjsTestFixture, "JobQueue with promise") {
     REQUIRE(done == true);
 }
 
+
+TEST_CASE_METHOD(QjsTestFixture, "Test QjsEngie::loadByteCode") {
+    using namespace jspp;
+    namespace fs = std::filesystem;
+
+    static constexpr std::string_view bytecode_file = "qjs_bytecode.bin";
+
+    EngineScope lock{engine.get()};
+
+    auto cwd = fs::current_path();
+
+    auto byteCodeFilePath = cwd / bytecode_file; // ./qjs_bytecode.bin
+    if (!fs::exists(byteCodeFilePath)) {
+        // in project root?
+        auto maybe = cwd / "test" / bytecode_file; // ./test/qjs_bytecode.bin
+        if (fs::exists(maybe)) {
+            byteCodeFilePath = maybe;
+        }
+
+        // in out dir or bin dir?
+        maybe = cwd.parent_path() / "test" / bytecode_file; // ./../test/qjs_bytecode.bin
+        if (fs::exists(maybe)) {
+            byteCodeFilePath = maybe;
+        }
+
+    }
+
+    bool done    = false;
+    auto setDone = Function::newFunction(binding::cpp_func([&done](bool val) { done = val; }));
+
+    engine->globalThis().set(String::newString("setDone"), setDone);
+
+    REQUIRE_NOTHROW(engine->loadByteCode(byteCodeFilePath));
+    REQUIRE(done == true);
+}
+
+
 #endif
