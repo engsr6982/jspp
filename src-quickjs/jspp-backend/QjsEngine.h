@@ -38,6 +38,8 @@ public:
     // qjs backend specific
     void pumpPendingJobs();
 
+    [[nodiscard]] JobQueue* getJobQueue() const;
+
     Local<Value> loadByteCode(std::filesystem::path const& path, bool main = false);
 
 protected:

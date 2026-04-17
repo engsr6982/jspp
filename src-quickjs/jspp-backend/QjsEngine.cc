@@ -142,6 +142,8 @@ void QjsEngine::pumpPendingJobs() {
     }
 }
 
+JobQueue* QjsEngine::getJobQueue() const { return queue_.get(); }
+
 Local<Value> QjsEngine::loadByteCode(std::filesystem::path const& path, bool main) {
     std::ifstream ifs{path, std::ios::binary};
     if (!ifs) {
