@@ -103,6 +103,17 @@ Like pybind11, jspp provides fine-grained lifetime control when passing complex 
 | `JSPP_EXTERNAL_LIB` | N/A              | N/A     | Optional | Specifies additional static library paths. |
 | `JSPP_BUILD_TESTS`  | `ON` / `OFF`     | `OFF`   | Optional | Whether to build the test suite.           |
 
+## 📋 Compatibility Across Common Usage Scenarios
+
+| Scenario                                                  | Type      | Engine (Runtime) Ownership | Support      | Notes                                                                                                                                                                                         |
+| --------------------------------------------------------- | --------- | -------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C++ project embedding jspp                                | Embedded  | Owned by jspp              | ✅ Supported | N/A                                                                                                                                                                                           |
+| C++ project embedding Node.js                             | Embedded  | Owned by Node.js           | ⚠️ Partial   | jspp borrows `isolate` and `context` <br> `ESModule` **not supported (Node.js already takes over the v8 module resolution callback)** <br/> **libnode** shared library must export v8 symbols |
+| Node.js Addon                                             | Extension | Owned by Node.js           | ❌ Untested  | `ESModule` mechanism not yet implemented                                                                                                                                                      |
+| QuickJS native module                                     | Extension | Owned by host              | ❌ Untested  | `ESModule` mechanism not yet implemented                                                                                                                                                      |
+| QuickJS native module (host uses jspp)                    | Extension | Owned by host's jspp       | ❌ Untested  | `ESModule` mechanism not yet implemented, potential Opaque conflict                                                                                                                           |
+| QuickJS native module (host uses another binding library) | Extension | Owned by host              | ❌ Untested  | `ESModule` mechanism not yet implemented, potential Opaque conflict                                                                                                                           |
+
 ## ⚙️ Internals
 
 ### 🧱 Engine Abstraction Layer
