@@ -144,6 +144,11 @@ Local<Function> Function::newFunction(FunctionCallback&& cb) {
                 return qjs_backend::QjsHelper::getDupLocal(result);
             } catch (Exception const& e) {
                 return qjs_backend::QjsHelper::rethrowToScript(e);
+            } catch (std::exception const& e) {
+                return qjs_backend::QjsHelper::rethrowToScript(e, engine);
+            } catch (...) {
+                JS_ThrowPlainError(engine->context_, "Unknown C++ exception occurred");
+                return JS_EXCEPTION;
             }
         },
         0,

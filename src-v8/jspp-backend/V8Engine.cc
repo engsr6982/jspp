@@ -400,6 +400,10 @@ v8::Local<v8::FunctionTemplate> V8Engine::newConstructor(ClassMeta const& meta) 
                 });
             } catch (Exception const& e) {
                 v8_backend::V8Helper::rethrowToScript(e);
+            } catch (std::exception const& e) {
+                v8_backend::V8Helper::rethrowToScript(e);
+            } catch (...) {
+                runtime->isolate_->ThrowError("Unknown C++ exception occurred");
             }
         },
         data
@@ -421,6 +425,10 @@ void V8Engine::buildStaticMembers(v8::Local<v8::FunctionTemplate>& obj, ClassMet
                 info.GetReturnValue().Set(ValueHelper::unwrap(ret));
             } catch (Exception const& e) {
                 v8_backend::V8Helper::rethrowToScript(e);
+            } catch (std::exception const& e) {
+                v8_backend::V8Helper::rethrowToScript(e);
+            } catch (...) {
+                info.GetIsolate()->ThrowError("Unknown C++ exception occurred");
             }
         };
 
@@ -432,13 +440,11 @@ void V8Engine::buildStaticMembers(v8::Local<v8::FunctionTemplate>& obj, ClassMet
                     pbin->setter_(ValueHelper::wrap<Value>(value));
                 } catch (Exception const& e) {
                     v8_backend::V8Helper::rethrowToScript(e);
+                } catch (std::exception const& e) {
+                    v8_backend::V8Helper::rethrowToScript(e);
+                } catch (...) {
+                    info.GetIsolate()->ThrowError("Unknown C++ exception occurred");
                 }
-            };
-        } else {
-            v8Setter = [](v8::Local<v8::Name>, v8::Local<v8::Value>, v8::PropertyCallbackInfo<void> const&) {
-                v8_backend::V8Helper::rethrowToScript(
-                    Exception{"Cannot write to read-only native property", Exception::Type::TypeError}
-                );
             };
         }
 
@@ -464,6 +470,10 @@ void V8Engine::buildStaticMembers(v8::Local<v8::FunctionTemplate>& obj, ClassMet
                     info.GetReturnValue().Set(ValueHelper::unwrap(ret));
                 } catch (Exception const& e) {
                     v8_backend::V8Helper::rethrowToScript(e);
+                } catch (std::exception const& e) {
+                    v8_backend::V8Helper::rethrowToScript(e);
+                } catch (...) {
+                    info.GetIsolate()->ThrowError("Unknown C++ exception occurred");
                 }
             },
             v8::External::New(isolate_, const_cast<StaticMemberMeta::Function*>(&function)),
@@ -501,6 +511,10 @@ void V8Engine::buildInstanceMembers(v8::Local<v8::FunctionTemplate>& obj, ClassM
                     info.GetReturnValue().Set(ValueHelper::unwrap(val));
                 } catch (Exception const& e) {
                     v8_backend::V8Helper::rethrowToScript(e);
+                } catch (std::exception const& e) {
+                    v8_backend::V8Helper::rethrowToScript(e);
+                } catch (...) {
+                    info.GetIsolate()->ThrowError("Unknown C++ exception occurred");
                 }
             },
             v8::External::New(isolate_, const_cast<InstanceMemberMeta::Method*>(&method)),
@@ -532,6 +546,10 @@ void V8Engine::buildInstanceMembers(v8::Local<v8::FunctionTemplate>& obj, ClassM
                     info.GetReturnValue().Set(ValueHelper::unwrap(val));
                 } catch (Exception const& e) {
                     v8_backend::V8Helper::rethrowToScript(e);
+                } catch (std::exception const& e) {
+                    v8_backend::V8Helper::rethrowToScript(e);
+                } catch (...) {
+                    info.GetIsolate()->ThrowError("Unknown C++ exception occurred");
                 }
             },
             data,
@@ -553,6 +571,10 @@ void V8Engine::buildInstanceMembers(v8::Local<v8::FunctionTemplate>& obj, ClassM
                         (prop->setter_)(*typed, Arguments{std::make_pair(engine, info)});
                     } catch (Exception const& e) {
                         v8_backend::V8Helper::rethrowToScript(e);
+                    } catch (std::exception const& e) {
+                        v8_backend::V8Helper::rethrowToScript(e);
+                    } catch (...) {
+                        info.GetIsolate()->ThrowError("Unknown C++ exception occurred");
                     }
                 },
                 data,

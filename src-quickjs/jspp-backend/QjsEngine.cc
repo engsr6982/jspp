@@ -30,9 +30,7 @@
 
 
 namespace jspp {
-
 namespace qjs_backend {
-
 static_assert(std::is_base_of_v<QjsEngine, Engine>, "Engine must be derived from QjsEngine");
 static_assert(std::is_final_v<Engine>, "Engine must be final");
 
@@ -188,7 +186,6 @@ Local<Value> QjsEngine::loadByteCode(std::filesystem::path const& path, bool mai
 
 PauseGcGuard::PauseGcGuard(Engine* engine) : engine_(engine) { engine_->pauseGcCount_++; }
 PauseGcGuard::~PauseGcGuard() { engine_->pauseGcCount_--; }
-
 } // namespace qjs_backend
 
 
@@ -439,7 +436,6 @@ bool Engine::trySetReferenceInternal(Local<Object> const& parentObj, Local<Objec
 }
 
 namespace qjs_backend {
-
 void QjsEngine::setToStringTag(Local<Object>& obj, std::string_view name) {
     JS_DefinePropertyValue(
         context_,
@@ -464,7 +460,8 @@ bool QjsEngine::updateModuleImportMeta(
 
     if (isMain.has_value()) {
         auto code = JS_DefinePropertyValueStr(context_, meta, "main", JS_NewBool(context_, *isMain), JS_PROP_C_W_E);
-        if (code < 0) { // error
+        if (code < 0) {
+            // error
             JS_FreeValue(context_, meta);
             QjsHelper::rethrowException(code);
         }
@@ -478,7 +475,8 @@ bool QjsEngine::updateModuleImportMeta(
             JS_NewStringLen(context_, url->data(), url->size()),
             JS_PROP_C_W_E
         );
-        if (code < 0) { // error
+        if (code < 0) {
+            // error
             JS_FreeValue(context_, meta);
             QjsHelper::rethrowException(code);
         }
@@ -521,7 +519,12 @@ Local<Function> QjsEngine::newDataFunction(DataFunctionCallback callback, void* 
                 auto ret  = callback(args, data1, data2);
                 return QjsHelper::getDupLocal(ret, engine->context_);
             } catch (Exception const& e) {
-                return QjsHelper::rethrowToScript(e);
+                return QjsHelper::rethrowToScript(e, engine);
+            } catch (std::exception const& e) {
+                return QjsHelper::rethrowToScript(e, engine);
+            } catch (...) {
+                JS_ThrowPlainError(engine->context_, "Unknown C++ exception occurred");
+                return JS_EXCEPTION;
             }
         },
         0,
@@ -771,7 +774,5 @@ Local<Object> QjsEngine::newClassPrototype(ClassMeta const& meta) {
 
     return prototype;
 }
-
 } // namespace qjs_backend
-
 } // namespace jspp

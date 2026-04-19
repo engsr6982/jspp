@@ -119,6 +119,10 @@ Local<Function> Function::newFunction(FunctionCallback&& cb) {
                 info.GetReturnValue().Set(ValueHelper::unwrap(returnValue));
             } catch (Exception const& e) {
                 v8_backend::V8Helper::rethrowToScript(e);
+            } catch (std::exception const& e) {
+                v8_backend::V8Helper::rethrowToScript(e);
+            } catch (...) {
+                info.GetIsolate()->ThrowError("Unknown C++ exception occurred");
             }
         },
         external

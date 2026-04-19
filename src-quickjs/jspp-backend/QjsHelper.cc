@@ -40,6 +40,11 @@ JSValue QjsHelper::rethrowToScript(Exception const& exception, Engine* engine) {
     JS_Throw(ctx, getDupLocal(exception.exception()));
     return JS_EXCEPTION;
 }
+JSValue QjsHelper::rethrowToScript(std::exception const& exception, Engine* engine) {
+    JSContext* ctx = engine ? engine->context_ : currentContextChecked();
+    JS_ThrowPlainError(ctx, "C++ Exception: %s", exception.what());
+    return JS_EXCEPTION;
+}
 
 JSValue QjsHelper::dupValue(JSValueConst val, JSContext* ctx) {
     if (JS_VALUE_HAS_REF_COUNT(val)) {

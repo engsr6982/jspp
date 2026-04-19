@@ -27,6 +27,7 @@ struct V8Helper {
     static void rethrowException(v8::TryCatch const& tryCatch);
 
     static void rethrowToScript(Exception const& exception);
+    static void rethrowToScript(std::exception const& exception);
 
     static void rethrowToScript(v8::TryCatch& tryCatch);
 

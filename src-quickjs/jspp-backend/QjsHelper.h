@@ -23,6 +23,7 @@ struct QjsHelper {
     static void rethrowException(int code, std::string_view message = "Unknown error");
 
     [[nodiscard]] static JSValue rethrowToScript(Exception const& exception, Engine* engine = nullptr);
+    [[nodiscard]] static JSValue rethrowToScript(std::exception const& exception, Engine* engine = nullptr);
 
     [[nodiscard]] static JSValue dupValue(JSValueConst val, JSContext* ctx = nullptr);
 

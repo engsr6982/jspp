@@ -29,6 +29,12 @@ void V8Helper::rethrowToScript(Exception const& exception) {
     auto isolate = currentIsolateChecked();
     isolate->ThrowException(ValueHelper::unwrap(exception.exception()));
 }
+void V8Helper::rethrowToScript(std::exception const& exception) {
+    auto message = std::format("C++ Exception: {}", exception.what());
+
+    auto isolate = currentIsolateChecked();
+    isolate->ThrowError(v8::String::NewFromUtf8(isolate, message.data()).ToLocalChecked());
+}
 
 void V8Helper::rethrowToScript(v8::TryCatch& tryCatch) {
     if (tryCatch.HasCaught()) {
