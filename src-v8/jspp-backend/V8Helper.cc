@@ -8,6 +8,8 @@
 
 #include <v8-exception.h>
 
+#include <format>
+
 namespace jspp::v8_backend {
 
 v8::Isolate* V8Helper::currentIsolateChecked() { return EngineScope::currentEngineChecked().isolate_; }
