@@ -18,10 +18,12 @@ class V8Engine {
 public:
     JSPP_DISABLE_COPY(V8Engine);
 
+    using V8IsolateFactory = std::function<v8::Isolate*()>;
+
     /**
      * Create an engine instance, internally automatically new Isolate and Context
      */
-    explicit V8Engine(); // todo: support isolate factory callback
+    explicit V8Engine(V8IsolateFactory const& factory = nullptr);
 
     /**
      * To create a Js engine, using sources from outside is isolate and context.

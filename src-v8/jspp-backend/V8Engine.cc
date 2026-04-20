@@ -43,12 +43,16 @@ static_assert(std::is_final_v<Engine>, "Engine must be final");
 Engine*       V8Engine::asEngine() { return static_cast<Engine*>(this); }
 Engine const* V8Engine::asEngine() const { return static_cast<Engine const*>(this); }
 
-V8Engine::V8Engine() {
-    v8::Isolate::CreateParams params;
-    params.array_buffer_allocator = v8::ArrayBuffer::Allocator::NewDefaultAllocator();
+V8Engine::V8Engine(V8IsolateFactory const& factory) {
+    if (factory) {
+        isolate_ = factory();
+        if (!isolate_) throw std::runtime_error("Failed to create V8 isolate");
+    } else {
+        v8::Isolate::CreateParams params;
+        params.array_buffer_allocator = v8::ArrayBuffer::Allocator::NewDefaultAllocator();
 
-    isolate_ = v8::Isolate::New(params);
-
+        isolate_ = v8::Isolate::New(params);
+    }
     v8::Locker         locker(isolate_);
     v8::Isolate::Scope isolate_scope(isolate_);
     v8::HandleScope    handle_scope(isolate_);
