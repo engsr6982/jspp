@@ -278,6 +278,37 @@ namespace jspp::binding::traits {
 | `kReferencePersistent`         | 此策略和 `kReference` 大致相同，唯一的不同是此策略创建的资源不受 TransientObjectScope 的影响。                                                                                                                                               |
 | `kReferenceInternalPersistent` | 此策略和 `kReferenceInternal` 大致相同，唯一的不同是此策略创建的资源不受 TransientObjectScope 的影响。                                                                                                                                       |
 
+> `ReferenceInternal` 核心原理  
+> 例如，当脚本写下:
+>
+> ```js
+> let comp = new Actor().containerComponent;
+> ```
+>
+> 如果没有 `ReferenceInternal` 策略，那么 `Actor` 将会在赋值完成后被回收。  
+> 进而导致 `comp` 变量的内部存储指向无效地址，当脚本访问 `comp` 时，底层访问指针**UAF 崩溃**。
+>
+> ```mermaid
+> graph LR
+>     subgraph cpp-heap
+>         Actor
+>         ContainerComponent
+>     end
+>
+>     subgraph js-heap
+>         ActorJs[ActorJs]
+>         ContainerComponentJs[ContainerComponentJs]
+>     end
+>
+>     Actor --member--> ContainerComponent
+>     ActorJs --getter--> ContainerComponentJs
+>
+>     ActorJs --NativeInstance(Owned by std::unique_ptr&lt;T&gt;)--> Actor
+>     ContainerComponentJs --NativeInstance(Reference)--> ContainerComponent
+>
+>     ContainerComponentJs --ReferenceInternal(InternalField)--> ActorJs
+> ```
+
 #### 类型转换
 
 | C++ 类型                      | 脚本类型(`toJs`)                               | 脚本输入(`toCpp`)                                       |

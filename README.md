@@ -280,6 +280,37 @@ namespace jspp::binding::traits {
 | `kReferencePersistent`         | Similar to `kReference`, but resources created with this policy are **not** affected by `TransientObjectScope`.                                                                                                                                                                                                                                             |
 | `kReferenceInternalPersistent` | Similar to `kReferenceInternal`, but resources created with this policy are **not** affected by `TransientObjectScope`.                                                                                                                                                                                                                                     |
 
+> Core Principle of `ReferenceInternal`  
+> For example, when a script writes:
+>
+> ```js
+> let comp = new Actor().containerComponent;
+> ```
+>
+> Without the `ReferenceInternal` policy, the `Actor` would be garbage-collected immediately after the assignment completes.  
+> Consequently, the internal storage of the `comp` variable would point to an invalid address. When the script later accesses `comp`, the underlying pointer dereference results in a **Use-After-Free (UAF) crash**.
+>
+> ```mermaid
+> graph LR
+>     subgraph cpp-heap
+>         Actor
+>         ContainerComponent
+>     end
+>
+>     subgraph js-heap
+>         ActorJs[ActorJs]
+>         ContainerComponentJs[ContainerComponentJs]
+>     end
+>
+>     Actor --member--> ContainerComponent
+>     ActorJs --getter--> ContainerComponentJs
+>
+>     ActorJs --NativeInstance(Owned by std::unique_ptr&lt;T&gt;)--> Actor
+>     ContainerComponentJs --NativeInstance(Reference)--> ContainerComponent
+>
+>     ContainerComponentJs --ReferenceInternal(InternalField)--> ActorJs
+> ```
+
 #### Type Conversions
 
 | C++ Type                      | Script Type (`toJs`)                            | Script Input (`toCpp`)                                   |
