@@ -18,6 +18,16 @@
     static void* operator new[](std::size_t)                        = delete;                                          \
     static void* operator new[](std::size_t, const std::nothrow_t&) = delete;
 
+#define JSPP_DECL_FLAG_OPERATOR(TYPE)                                                                                  \
+    inline constexpr TYPE operator|(TYPE lhs, TYPE rhs) {                                                              \
+        using Underlying = std::underlying_type_t<TYPE>;                                                               \
+        return static_cast<TYPE>(static_cast<Underlying>(lhs) | static_cast<Underlying>(rhs));                         \
+    }                                                                                                                  \
+    inline constexpr TYPE operator&(TYPE lhs, TYPE rhs) {                                                              \
+        using Underlying = std::underlying_type_t<TYPE>;                                                               \
+        return static_cast<TYPE>(static_cast<Underlying>(lhs) & static_cast<Underlying>(rhs));                         \
+    }
+
 #if defined(_MSC_VER)
 #define JSPP_WARNING_GUARD_BEGIN                                                                                       \
     __pragma(warning(push)) __pragma(warning(disable : 4100)) // unreferenced formal parameter

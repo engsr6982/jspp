@@ -1,7 +1,8 @@
 #pragma once
+#include "jspp/Macro.h"
+
 #include <functional>
 #include <memory>
-
 
 namespace jspp {
 
@@ -96,11 +97,12 @@ struct ImplType {
 
 } // namespace internal
 
+template <typename E>
+inline constexpr bool hasFlag(E e, E f) {
+    using Underlying = std::underlying_type_t<E>;
+    return (static_cast<Underlying>(e) & static_cast<Underlying>(f)) != 0;
+}
+
 } // namespace jspp
 
-inline jspp::PropertyAttribute operator|(jspp::PropertyAttribute lhs, jspp::PropertyAttribute rhs) {
-    return static_cast<jspp::PropertyAttribute>(static_cast<uint32_t>(lhs) | static_cast<uint32_t>(rhs));
-}
-inline jspp::PropertyAttribute operator&(jspp::PropertyAttribute lhs, jspp::PropertyAttribute rhs) {
-    return static_cast<jspp::PropertyAttribute>(static_cast<uint32_t>(lhs) & static_cast<uint32_t>(rhs));
-}
+JSPP_DECL_FLAG_OPERATOR(jspp::PropertyAttribute)
