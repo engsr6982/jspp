@@ -486,33 +486,42 @@ bool QjsEngine::updateModuleImportMeta(
     return true;
 }
 
+JSValue QjsEngine::newPointerData(void* ptr) const {
+    if (!ptr) {
+        return JS_NULL;
+    }
+    auto data = JS_NewObjectClass(context_, pointerDataClassId_);
+    QjsHelper::rethrowException(data);
+    JS_SetOpaque(data, ptr);
+    return data;
+}
+
 Local<Function> QjsEngine::newDataFunction(DataFunctionCallback callback, void* data1, void* data2) {
-    static auto newPointerData = [](Engine* engine, void* ptr) {
-        if (!ptr) {
-            return JS_NULL;
-        }
-        auto data = JS_NewObjectClass(engine->context_, engine->pointerDataClassId_);
-        QjsHelper::rethrowException(data);
-        JS_SetOpaque(data, ptr);
-        return data;
-    };
+    auto engine = asEngine();
 
-    auto engine   = asEngine();
-    auto opaque1  = newPointerData(engine, data1);
-    auto opaque2  = newPointerData(engine, data2);
-    auto opaqueCb = newPointerData(engine, reinterpret_cast<void*>(callback));
+    auto    opaqueData1    = newPointerData(data1);
+    auto    opaqueData2    = newPointerData(data2);
+    auto    opaqueCallback = newPointerData(reinterpret_cast<void*>(callback));
+    JSValue engineOpaque   = newPointerData(engine);
 
-    auto args = std::array<JSValue, 3>{opaque1, opaque2, opaqueCb};
+    auto args = std::array{opaqueData1, opaqueData2, opaqueCallback, engineOpaque};
 
     auto fn = JS_NewCFunctionData(
         context_,
         [](JSContext* ctx, JSValueConst thiz, int argc, JSValueConst* argv, int /* magic */, JSValueConst* data
         ) -> JSValue {
-            auto engine = static_cast<Engine*>(JS_GetContextOpaque(ctx));
+            auto externalEngine = data[3];
+            auto externalID     = JS_GetClassID(externalEngine);
+            auto engine         = static_cast<Engine*>(JS_GetOpaque(externalEngine, externalID));
 
-            auto data1    = JS_GetOpaque(data[0], engine->pointerDataClassId_);
-            auto data2    = JS_GetOpaque(data[1], engine->pointerDataClassId_);
-            auto callback = reinterpret_cast<DataFunctionCallback>(JS_GetOpaque(data[2], engine->pointerDataClassId_));
+            if (engine->pointerDataClassId_ != externalID) [[unlikely]] {
+                JS_ThrowTypeError(ctx, "Invalid engine pointer data");
+                return JS_EXCEPTION;
+            }
+
+            auto data1    = JS_GetOpaque(data[0], externalID);
+            auto data2    = JS_GetOpaque(data[1], externalID);
+            auto callback = reinterpret_cast<DataFunctionCallback>(JS_GetOpaque(data[2], externalID));
 
             try {
                 auto args = QjsHelper::wrapArguments(engine, thiz, argc, argv);
@@ -533,9 +542,9 @@ Local<Function> QjsEngine::newDataFunction(DataFunctionCallback callback, void* 
         args.data()
     );
 
-    JS_FreeValue(context_, opaque1);
-    JS_FreeValue(context_, opaque2);
-    JS_FreeValue(context_, opaqueCb);
+    for (auto& arg : args) {
+        JS_FreeValue(context_, arg);
+    }
 
     QjsHelper::rethrowException(fn);
     return ValueHelper::wrap<Function>(fn);

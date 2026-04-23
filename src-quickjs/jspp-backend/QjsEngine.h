@@ -50,6 +50,8 @@ protected:
     void setToStringTag(Local<Object>& obj, std::string_view name);
     bool updateModuleImportMeta(JSModuleDef* def, std::optional<std::string_view> url, std::optional<bool> isMain);
 
+    [[nodiscard]] JSValue newPointerData(void* ptr) const;
+
     using DataFunctionCallback = Local<Value> (*)(Arguments const& args, void* data1, void* data2);
     Local<Function> newDataFunction(DataFunctionCallback callback, void* data1, void* data2);
 

@@ -8,6 +8,7 @@
 #include "jspp/core/Reference.h"
 #include "jspp/core/Value.h"
 
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <memory>
@@ -123,24 +124,29 @@ Local<Function> Function::newFunction(FunctionCallback&& cb) {
 
     auto data = JS_NewObjectClass(engine.context_, engine.functionDataClassId_);
     qjs_backend::QjsHelper::rethrowException(data);
-
     JS_SetOpaque(data, ptr.release());
 
-    JSValue argv[1] = {data};
+    auto engineOpaque = engine.newPointerData(&engine);
+
+    auto args = std::array{engineOpaque, data};
 
     auto func = JS_NewCFunctionData(
         engine.context_,
         [](JSContext* ctx, JSValueConst thiz, int argc, JSValueConst* argv, int /* magic */, JSValue* data) -> JSValue {
-            auto classId = JS_GetClassID(data[0]);
-            assert(classId != JS_INVALID_CLASS_ID);
+            auto externalPointerID = JS_GetClassID(data[0]);
+            assert(externalPointerID != JS_INVALID_CLASS_ID);
 
-            auto cb     = static_cast<FunctionCallback*>(JS_GetOpaque(data[0], static_cast<int>(classId)));
-            auto engine = static_cast<Engine*>(JS_GetContextOpaque(ctx));
-            assert(engine->functionDataClassId_ == classId);
+            auto engine = static_cast<Engine*>(JS_GetOpaque(data[0], externalPointerID));
+            if (externalPointerID != engine->pointerDataClassId_) [[unlikely]] {
+                JS_ThrowTypeError(ctx, "Invalid engine pointer data");
+                return JS_EXCEPTION;
+            }
+
+            auto callback = static_cast<FunctionCallback*>(JS_GetOpaque(data[1], engine->functionDataClassId_));
 
             try {
                 auto args   = qjs_backend::QjsHelper::wrapArguments(engine, thiz, argc, argv);
-                auto result = (*cb)(args);
+                auto result = (*callback)(args);
                 return qjs_backend::QjsHelper::getDupLocal(result);
             } catch (Exception const& e) {
                 return qjs_backend::QjsHelper::rethrowToScript(e);
@@ -153,10 +159,10 @@ Local<Function> Function::newFunction(FunctionCallback&& cb) {
         },
         0,
         0,
-        1,
-        argv
+        args.size(),
+        args.data()
     );
-    JS_FreeValue(engine.context_, data);
+    for (auto& arg : args) JS_FreeValue(engine.context_, arg);
     qjs_backend::QjsHelper::rethrowException(func);
     return Local<Function>{func};
 }
