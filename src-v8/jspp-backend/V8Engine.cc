@@ -156,7 +156,7 @@ void Engine::gc() { isolate_->LowMemoryNotification(); }
 
 Local<Object> Engine::globalThis() const { return ValueHelper::wrap<Object>(context_.Get(isolate_)->Global()); }
 
-Local<Value> Engine::registerClass(ClassMeta const& meta) {
+Local<Value> Engine::performRegisterClass(ClassMeta const& meta) {
     auto engine = asEngine();
     if (engine->registeredClasses_.contains(meta.name_)) {
         throw std::logic_error("Class already registered: " + meta.name_);
@@ -207,12 +207,10 @@ Local<Value> Engine::registerClass(ClassMeta const& meta) {
     engine->registeredClasses_.emplace(meta.name_, &meta);
     classConstructors_.emplace(&meta, v8::Global<v8::FunctionTemplate>{isolate_, ctor});
 
-    auto myFunction = ValueHelper::wrap<Function>(function.ToLocalChecked());
-    globalThis().set(scriptClassName, myFunction);
-    return myFunction;
+    return ValueHelper::wrap<Function>(function.ToLocalChecked());
 }
 
-Local<Object> Engine::registerEnum(EnumMeta const& meta) {
+Local<Object> Engine::performRegisterEnum(EnumMeta const& meta) {
     if (registeredEnums_.contains(meta.name_)) {
         throw std::logic_error("Enum already registered: " + meta.name_);
     }
@@ -232,8 +230,6 @@ Local<Object> Engine::registerEnum(EnumMeta const& meta) {
     setToStringTag(v8Object, meta.name_);
 
     registeredEnums_.emplace(meta.name_, &meta);
-
-    globalThis().set(String::newString(meta.name_), object);
     return object;
 }
 

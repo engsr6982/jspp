@@ -6,6 +6,7 @@
 #include "MetaInfo.h"
 #include "Reference.h"
 #include "TrackedHandle.h"
+#include "Utils.h"
 #include "Value.h"
 #include "jspp/core/Trampoline.h"
 
@@ -62,6 +63,18 @@ Local<Value> Engine::loadFile(std::filesystem::path const& path) {
     }
     std::string code((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
     return evalScript(String::newString(code), String::newString(path.string())); // todo: replace to evalModule
+}
+
+Local<Value> Engine::registerClass(ClassMeta const& meta) {
+    auto ctor = performRegisterClass(meta);
+    namespace_utils::mountNamespace(globalThis(), meta.name_, ctor);
+    return ctor;
+}
+
+Local<Object> Engine::registerEnum(EnumMeta const& meta) {
+    auto obj = performRegisterEnum(meta);
+    namespace_utils::mountNamespace(globalThis(), meta.name_, obj);
+    return obj;
 }
 
 ClassMeta const* Engine::getClassMeta(std::type_index typeId) const {

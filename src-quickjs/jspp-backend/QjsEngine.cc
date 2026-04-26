@@ -251,7 +251,7 @@ void qjs_backend::QjsEngine::NativeClassGcMarker(JSRuntime* runtime, JSValueCons
     }
 }
 
-Local<Value> Engine::registerClass(ClassMeta const& meta) {
+Local<Value> Engine::performRegisterClass(ClassMeta const& meta) {
     auto engine = asEngine();
     if (engine->registeredClasses_.contains(meta.name_)) {
         throw std::logic_error("Class already registered: " + meta.name_);
@@ -263,7 +263,6 @@ Local<Value> Engine::registerClass(ClassMeta const& meta) {
         auto object = Object::newObject();
         buildStaticMembers(object, meta);
         setToStringTag(object, meta.name_);
-        globalThis().set(String::newString(meta.name_), object);
         engine->registeredClasses_.emplace(meta.name_, &meta);
         return object;
     }
@@ -331,12 +330,10 @@ Local<Value> Engine::registerClass(ClassMeta const& meta) {
             qjs_backend::QjsHelper::getDupLocal(prototype, context_)
         }
     );
-
-    globalThis().set(String::newString(meta.name_), ctor);
     return ctor;
 }
 
-Local<Object> Engine::registerEnum(EnumMeta const& meta) {
+Local<Object> Engine::performRegisterEnum(EnumMeta const& meta) {
     if (registeredEnums_.contains(meta.name_)) {
         throw std::logic_error("Enum already registered: " + meta.name_);
     }
@@ -355,8 +352,6 @@ Local<Object> Engine::registerEnum(EnumMeta const& meta) {
     setToStringTag(object, meta.name_);
 
     registeredEnums_.emplace(meta.name_, &meta);
-
-    globalThis().set(String::newString(meta.name_), object);
     return object;
 }
 

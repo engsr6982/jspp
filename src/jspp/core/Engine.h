@@ -47,12 +47,21 @@ public:
     [[nodiscard]] Local<Object> globalThis() const;
 
     /**
-     * Register a binding class and mount it to globalThis
+     * Register a class to globalThis
+     * @note Supports namespace separation, with the delimiter being '.'
      * @return if the class is static class, return object, else return class constructor
      */
     Local<Value> registerClass(ClassMeta const& meta);
 
+    /**
+     * Register an enum to globalThis.
+     * @note Supports namespace separation, with the delimiter being '.'
+     */
     Local<Object> registerEnum(EnumMeta const& meta);
+
+    Local<Value> performRegisterClass(ClassMeta const& meta);
+
+    Local<Object> performRegisterEnum(EnumMeta const& meta);
 
     /**
      * Get metadata of the registered instance class
