@@ -3,6 +3,7 @@
 #include "Reference.h"
 #include "Value.h"
 
+#include <format>
 #include <string_view>
 
 namespace jspp::namespace_utils {
