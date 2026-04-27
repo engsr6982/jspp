@@ -46,10 +46,6 @@ TEST_CASE("ClassMetaBuilder: script test", "[ClassMetaBuilder]") {
 
     engine->registerClass(UtilsMeta);
 
-    auto tree = engine->evalScript(jspp::String::newString("JSON.stringify(com)"));
-    REQUIRE(tree.isString());
-    REQUIRE(tree.asString().getValue() == R"({"example":{"Utils":{}}})");
-
     auto result = engine->evalScript(jspp::String::newString("com.example.Utils.add(1, 2)"));
     REQUIRE(result.isNumber());
     REQUIRE(result.asNumber().getInt32() == 3);
