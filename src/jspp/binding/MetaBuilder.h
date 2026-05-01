@@ -1,10 +1,11 @@
 #pragma once
 #include "ReturnValuePolicy.h"
 #include "TypeConverter.h"
+
 #include "jspp/binding/traits/TypeTraits.h"
 #include "jspp/core/Concepts.h"
 #include "jspp/core/MetaInfo.h"
-#include "traits/FunctionTraits.h"
+#include "jspp/core/Utils.h"
 
 
 #include <stdexcept>
@@ -64,23 +65,9 @@ public:
      * @note support namespace like `a.b.c.ClassName`
      * @note class name cannot start or end with '.'
      */
-    explicit ClassMetaBuilder(std::string_view name) : name_{name} {
-        if (name.empty()) {
-            throw std::invalid_argument("class name cannot be empty");
-        }
-        if (name.front() == '.' || name.back() == '.') {
-            throw std::invalid_argument("class name cannot start or end with '.'");
-        }
-        bool prev_dot = false;
-        for (char c : name) {
-            if (c == '.') {
-                if (prev_dot) {
-                    throw std::invalid_argument("class name cannot contain consecutive '.'");
-                }
-                prev_dot = true;
-            } else {
-                prev_dot = false;
-            }
+    explicit constexpr ClassMetaBuilder(std::string_view name) : name_{name} {
+        if (!namespace_utils::validNamespace(name)) {
+            throw std::invalid_argument("Invalid class name: segments cannot be empty or consecutive dots");
         }
     }
 
@@ -400,7 +387,16 @@ class EnumMetaBuilder {
     std::vector<EnumMeta::Entry> entries_;
 
 public:
-    explicit EnumMetaBuilder(std::string_view name) : name_{name} {}
+    /**
+     * @param name The name of the enum.
+     * @note support namespace like `a.b.c.EnumName`
+     * @note enum name cannot start or end with '.'
+     */
+    explicit constexpr EnumMetaBuilder(std::string_view name) : name_{name} {
+        if (!namespace_utils::validNamespace(name)) {
+            throw std::invalid_argument("Invalid enum name: segments cannot be empty or consecutive dots");
+        }
+    }
 
     EnumMetaBuilder& value(std::string name, T e) {
         entries_.emplace_back(std::move(name), static_cast<int64_t>(e));

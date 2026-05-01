@@ -62,6 +62,35 @@ inline constexpr std::string_view getNamespaceLeafString(std::string_view ns);
  */
 inline void mountNamespace(Local<Object> obj, std::string_view ns, Local<Value> value);
 
+/**
+ * Check if the string contains a namespace separator (dot).
+ *
+ * Note: This only checks for the presence of a dot. It does not guarantee
+ * the namespace is valid. Use validNamespace() for structural validation.
+ */
+inline constexpr bool hasNamespace(std::string_view sv) { return sv.find('.') != std::string_view::npos; }
+
+/**
+ * Validate the namespace string format.
+ *
+ * Rules:
+ * 1. Cannot be empty.
+ * 2. Cannot start or end with a dot ('.').
+ * 3. Cannot contain consecutive dots ("..").
+ *
+ * @return true if the namespace follows the rules.
+ */
+inline constexpr bool validNamespace(std::string_view sv) {
+    if (sv.empty()) return false;
+
+    // Cannot start or end with '.'
+    if (sv.front() == '.' || sv.back() == '.') return false;
+
+    // Cannot contain consecutive dots ".."
+    if (sv.find("..") != std::string_view::npos) return false;
+
+    return true;
+}
 
 // impl
 
