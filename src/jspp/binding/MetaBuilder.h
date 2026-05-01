@@ -116,7 +116,7 @@ public:
 
     template <typename Ty>
     auto& var(std::string name, Ty&& value, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic)
-        requires(!concepts::Callable<Ty>)
+        requires(!traits::Callable<Ty>)
     {
         auto [g, s] = adapter::wrapStaticMember(std::forward<Ty>(value), policy);
         staticProperty_.emplace_back(std::move(name), std::move(g), std::move(s));
@@ -125,7 +125,7 @@ public:
 
     template <typename Ty>
     auto& var_readonly(std::string name, Ty&& value, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic)
-        requires(!concepts::Callable<Ty>)
+        requires(!traits::Callable<Ty>)
     {
         auto [g, s] = adapter::wrapStaticMember<Ty, true>(std::forward<Ty>(value), policy);
         staticProperty_.emplace_back(std::move(name), std::move(g), std::move(s));
@@ -134,7 +134,7 @@ public:
 
     template <typename G>
     auto& var_readonly(std::string name, G&& getter, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic)
-        requires(concepts::Callable<G>)
+        requires(traits::Callable<G>)
     {
         if constexpr (traits::isGetterCallback_v<G>) {
             return var(std::move(name), std::forward<G>(getter), nullptr);

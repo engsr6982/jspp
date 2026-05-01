@@ -19,12 +19,12 @@ Local<Value> callAsConstructor(Local<Function> const& func, Args&&... args) {
     return func.callAsConstructor(std::span<const Local<Value>>(argv));
 }
 
-template <concepts::Callable F>
+template <traits::Callable F>
 FunctionCallback cpp_func(F&& fn, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic) {
     return adapter::wrapFunction(std::forward<F>(fn), policy);
 }
 
-template <concepts::Callable... F>
+template <traits::Callable... F>
 FunctionCallback overload_func(F&&... args) {
     return adapter::wrapOverloadFuncAndExtraPolicy(std::forward<F>(args)...);
 }

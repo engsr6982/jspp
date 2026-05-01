@@ -5,34 +5,39 @@
 namespace jspp::binding::traits {
 
 
-// Primary template: redirect to operator()
-template <typename T>
-struct FunctionTraits : FunctionTraits<decltype(&T::operator())> {};
+template <typename T, typename = void>
+struct FunctionTraits {};
 
-// 普通函数 / 函数指针
+// function / function pointer
 template <typename R, typename... Args>
 struct FunctionTraits<R (*)(Args...)> {
     using ReturnType                  = R;
     using ArgsTuple                   = std::tuple<Args...>;
     static constexpr size_t ArgsCount = sizeof...(Args);
-    static constexpr bool   isConst   = false; // always false
+    static constexpr bool   isConst   = false;
 };
 
 template <typename R, typename... Args>
 struct FunctionTraits<R(Args...)> : FunctionTraits<R (*)(Args...)> {};
 
+// C++17 noexcept
+template <typename R, typename... Args>
+struct FunctionTraits<R (*)(Args...) noexcept> : FunctionTraits<R (*)(Args...)> {};
+
+template <typename R, typename... Args>
+struct FunctionTraits<R(Args...) noexcept> : FunctionTraits<R (*)(Args...)> {};
+
 // std::function
 template <typename R, typename... Args>
 struct FunctionTraits<std::function<R(Args...)>> : FunctionTraits<R (*)(Args...)> {};
 
-
-// 成员函数指针（包括 const / noexcept 等）
+// member function pointer
 template <typename C, typename R, typename... Args>
 struct FunctionTraits<R (C::*)(Args...)> {
     using ReturnType                  = R;
     using ArgsTuple                   = std::tuple<Args...>;
     static constexpr size_t ArgsCount = sizeof...(Args);
-    static constexpr bool   isConst   = false; // always false
+    static constexpr bool   isConst   = false;
 };
 
 template <typename C, typename R, typename... Args>
@@ -40,17 +45,28 @@ struct FunctionTraits<R (C::*)(Args...) const> {
     using ReturnType                  = R;
     using ArgsTuple                   = std::tuple<Args...>;
     static constexpr size_t ArgsCount = sizeof...(Args);
-    static constexpr bool   isConst   = true; // const modifier
+    static constexpr bool   isConst   = true;
 };
+
+// C++17 noexcept member function pointer
+template <typename C, typename R, typename... Args>
+struct FunctionTraits<R (C::*)(Args...) noexcept> : FunctionTraits<R (C::*)(Args...)> {};
 
 template <typename C, typename R, typename... Args>
 struct FunctionTraits<R (C::*)(Args...) const noexcept> : FunctionTraits<R (C::*)(Args...) const> {};
 
+// Functor & Lambda
+template <typename T>
+struct FunctionTraits<T, std::void_t<decltype(&T::operator())>> : FunctionTraits<decltype(&T::operator())> {};
+
 
 template <typename T>
+concept Callable = requires { typename FunctionTraits<std::remove_cvref_t<T>>::ReturnType; };
+
+template <Callable T>
 constexpr size_t ArgsCount_v = FunctionTraits<std::remove_cvref_t<T>>::ArgsCount;
 
-template <typename T, size_t N>
+template <Callable T, size_t N>
 using ArgumentType_t = std::tuple_element_t<N, typename FunctionTraits<std::remove_cvref_t<T>>::ArgsTuple>;
 
 
