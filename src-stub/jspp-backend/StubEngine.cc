@@ -51,6 +51,11 @@ Local<Value> Engine::evalScript(Local<String> const& code, Local<String> const& 
     // TODO: please implement this
     return {};
 }
+Local<Value> Engine::evalModule(Local<String> const& code, Local<String> const& source) {
+    // TODO: please implement this
+    // Compile the module and execute it. Then check the promise status, and if it is rejected, throw an Exception.
+    return {};
+}
 
 void Engine::gc() {
     // TODO: please implement this
@@ -61,7 +66,14 @@ Local<Object> Engine::globalThis() const {
     throw Exception("Not implemented");
 }
 
-Local<Value> Engine::registerClass(ClassMeta const& meta) {
+void Engine::registerModule(ModuleMeta const& meta) {
+    if (registeredModule_.contains(meta.name_)) [[unlikely]] {
+        throw std::logic_error("Module already registered: " + meta.name_);
+    }
+    registeredModule_.emplace(meta.name_, &meta);
+}
+
+Local<Value> Engine::performRegisterClass(ClassMeta const& meta) {
     auto engine = asEngine();
     if (engine->registeredClasses_.contains(meta.name_)) {
         throw std::logic_error("Class already registered: " + meta.name_);
@@ -108,7 +120,7 @@ Local<Value> Engine::registerClass(ClassMeta const& meta) {
     throw Exception("Not implemented");
 }
 
-Local<Object> Engine::registerEnum(EnumMeta const& meta) {
+Local<Object> Engine::performRegisterEnum(EnumMeta const& meta) {
     if (registeredEnums_.contains(meta.name_)) {
         throw std::logic_error("Enum already registered: " + meta.name_);
     }

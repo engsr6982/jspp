@@ -12,6 +12,7 @@
 
 #include <cassert>
 #include <fstream>
+#include <ranges>
 #include <utility>
 
 
@@ -36,6 +37,7 @@ Engine::~Engine() {
 
         registeredClasses_.clear();
         registeredEnums_.clear();
+        registeredModule_.clear();
     }
     auto tryDispose = []<typename T>(T* t) {
         if constexpr (requires { t->dispose(); }) {
@@ -50,8 +52,9 @@ void Engine::setData(std::shared_ptr<void> data) { userData_ = std::move(data); 
 bool Engine::isDestroying() const { return isDestroying_; }
 
 Local<Value> Engine::evalScript(Local<String> const& code) { return evalScript(code, String::newString("<eval>")); }
+Local<Value> Engine::evalModule(Local<String> const& code) { return evalModule(code, String::newString("<eval>")); }
 
-// TODO: move to backend
+
 Local<Value> Engine::loadFile(std::filesystem::path const& path) {
     if (isDestroying()) return {};
     if (!std::filesystem::exists(path)) {
@@ -62,7 +65,7 @@ Local<Value> Engine::loadFile(std::filesystem::path const& path) {
         throw Exception("Failed to open file: " + path.string());
     }
     std::string code((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    return evalScript(String::newString(code), String::newString(path.string())); // todo: replace to evalModule
+    return evalModule(String::newString(code), String::newString(path.string()));
 }
 
 Local<Value> Engine::registerClass(ClassMeta const& meta) {
@@ -80,6 +83,21 @@ Local<Object> Engine::registerEnum(EnumMeta const& meta) {
 ClassMeta const* Engine::getClassMeta(std::type_index typeId) const {
     auto iter = instanceClassMapping.find(typeId);
     if (iter == instanceClassMapping.end()) return nullptr;
+    return iter->second;
+}
+ClassMeta const* Engine::getClassMeta(std::string const& name) const {
+    auto iter = registeredClasses_.find(name);
+    if (iter == registeredClasses_.end()) return nullptr;
+    return iter->second;
+}
+EnumMeta const* Engine::getEnumMeta(std::string const& name) const {
+    auto iter = registeredEnums_.find(name);
+    if (iter == registeredEnums_.end()) return nullptr;
+    return iter->second;
+}
+ModuleMeta const* Engine::getModuleMeta(std::string const& name) const {
+    auto iter = registeredModule_.find(name);
+    if (iter == registeredModule_.end()) return nullptr;
     return iter->second;
 }
 

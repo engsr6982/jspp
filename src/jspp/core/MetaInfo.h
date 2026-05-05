@@ -3,6 +3,8 @@
 
 #include <string>
 #include <typeindex>
+#include <utility>
+#include <variant>
 
 namespace jspp {
 
@@ -177,6 +179,61 @@ public:
     explicit EnumMeta(std::string name, std::vector<Entry> entries)
     : name_(std::move(name)),
       entries_(std::move(entries)) {}
+};
+
+
+struct ModuleConstantExport {
+    /*In the builder, variants rely on copy and move construction.
+      After construction is complete, the data here is read-only.*/
+    std::string    name_;   // read-only
+    GetterCallback getter_; // read-only
+
+    explicit ModuleConstantExport(std::string name, GetterCallback getter)
+    : name_(std::move(name)),
+      getter_(std::move(getter)) {}
+};
+struct ModuleFunctionExport {
+    /*In the builder, variants rely on copy and move construction.
+      After construction is complete, the data here is read-only.*/
+    std::string      name_;     // read-only
+    FunctionCallback callback_; // read-only
+
+    explicit ModuleFunctionExport(std::string name, FunctionCallback callback)
+    : name_(std::move(name)),
+      callback_(std::move(callback)) {}
+};
+struct ModuleMeta {
+    using ConstantExport = ModuleConstantExport;
+    using FunctionExport = ModuleFunctionExport;
+
+    std::string const                       name_;
+    std::vector<ClassMeta const*> const     classes_;
+    std::vector<EnumMeta const*> const      enums_;
+    std::vector<ModuleConstantExport> const constants_;
+    std::vector<ModuleFunctionExport> const functions_;
+
+    using DefaultExportVariant =
+        std::variant<std::monostate, ClassMeta const*, EnumMeta const*, GetterCallback, FunctionCallback>;
+    DefaultExportVariant const default_;
+
+    [[nodiscard]] inline constexpr bool hasDefaultExport() const noexcept {
+        return !std::holds_alternative<std::monostate>(default_);
+    }
+
+    explicit ModuleMeta(
+        std::string                       name,
+        std::vector<ClassMeta const*>     classes,
+        std::vector<EnumMeta const*>      enums,
+        std::vector<ModuleConstantExport> constants,
+        std::vector<ModuleFunctionExport> functions,
+        DefaultExportVariant              default_
+    )
+    : name_(std::move(name)),
+      classes_(std::move(classes)),
+      enums_(std::move(enums)),
+      constants_(std::move(constants)),
+      functions_(std::move(functions)),
+      default_(std::move(default_)) {}
 };
 
 

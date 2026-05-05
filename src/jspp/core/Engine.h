@@ -9,6 +9,9 @@
 #include "jspp-backend/traits/TraitEngine.h"
 
 namespace jspp {
+struct ModuleMeta;
+}
+namespace jspp {
 
 struct ClassMeta; // forward declaration
 struct EnumMeta;
@@ -38,9 +41,16 @@ public:
 
     Local<Value> evalScript(Local<String> const& code);
 
+    /** @note This interface is not available in the Addon scenario or under NoModuleLoader.*/
+    Local<Value> evalModule(Local<String> const& code);
+
+    /** @note This interface is not available in the Addon scenario or under NoModuleLoader.*/
     Local<Value> loadFile(std::filesystem::path const& path);
 
     Local<Value> evalScript(Local<String> const& code, Local<String> const& source);
+
+    /** @note This interface is not available in the Addon scenario or under NoModuleLoader.*/
+    Local<Value> evalModule(Local<String> const& code, Local<String> const& source);
 
     void gc();
 
@@ -59,6 +69,13 @@ public:
      */
     Local<Object> registerEnum(EnumMeta const& meta);
 
+    /**
+     * Register a native module
+     * @param meta the module meta
+     * @note This interface is not available in the Addon scenario or under NoModuleLoader.
+     */
+    void registerModule(ModuleMeta const& meta);
+
     Local<Value> performRegisterClass(ClassMeta const& meta);
 
     Local<Object> performRegisterEnum(EnumMeta const& meta);
@@ -68,6 +85,11 @@ public:
      * @note If it is a static class, always return nullptr (e.g. defClass<void>)
      */
     [[nodiscard]] ClassMeta const* getClassMeta(std::type_index typeId) const;
+
+    /** Obtain registered resource metadata */
+    [[nodiscard]] ClassMeta const*  getClassMeta(std::string const& name) const;
+    [[nodiscard]] EnumMeta const*   getEnumMeta(std::string const& name) const;
+    [[nodiscard]] ModuleMeta const* getModuleMeta(std::string const& name) const;
 
     Local<Object> newInstance(ClassMeta const& meta, std::unique_ptr<NativeInstance>&& instance);
 
@@ -105,10 +127,9 @@ private:
 
     ITrackedHandle* trackedHead_{nullptr};
 
-
-    std::unordered_map<std::string, ClassMeta const*> registeredClasses_;
-
-    std::unordered_map<std::string, EnumMeta const*> registeredEnums_;
+    std::unordered_map<std::string, ClassMeta const*>  registeredClasses_;
+    std::unordered_map<std::string, EnumMeta const*>   registeredEnums_;
+    std::unordered_map<std::string, ModuleMeta const*> registeredModule_{}; // lazy load
 
     std::unordered_map<std::type_index, ClassMeta const*> instanceClassMapping;
 };

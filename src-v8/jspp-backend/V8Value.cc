@@ -114,6 +114,8 @@ Local<Function> Function::newFunction(FunctionCallback&& cb) {
         [](v8::FunctionCallbackInfo<v8::Value> const& info) {
             auto data = reinterpret_cast<AssociateResources*>(info.Data().As<v8::External>()->Value());
             auto args = Arguments{std::make_pair(data->runtime, info)};
+
+            EngineScope tracker{data->runtime}; // for addon
             try {
                 auto returnValue = data->cb(args); // call native
                 info.GetReturnValue().Set(ValueHelper::unwrap(returnValue));

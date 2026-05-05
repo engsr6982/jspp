@@ -39,6 +39,9 @@ if(WIN32 AND ${JSPP_BACKEND} STREQUAL "v8")
     set_target_properties(jspp_test PROPERTIES
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
     )
+    set_target_properties(jspp_test PROPERTIES
+            MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>"
+    )
 endif()
 
 if (${JSPP_BACKEND} STREQUAL "quickjs")

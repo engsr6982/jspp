@@ -7,16 +7,15 @@
 #include "jspp/core/MetaInfo.h"
 #include "jspp/core/Utils.h"
 
-
+#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <unordered_set>
 
 
 namespace jspp::binding {
-
-
 enum class ConstructorKind {
     kNone,    // 默认状态, 未设置状态
     kNormal,  // 默认绑定构造
@@ -407,14 +406,189 @@ public:
 };
 
 
+template <bool ExportedByDefault = false>
+class ModuleMetaBuilder {
+    std::string                       name_;
+    ModuleMeta::DefaultExportVariant  default_;
+    std::vector<ClassMeta const*>     classes_;
+    std::vector<EnumMeta const*>      enums_;
+    std::vector<ModuleConstantExport> constants_;
+    std::vector<ModuleFunctionExport> functions_;
+
+    /*The ESM module system requires each export to have a symbol.
+      This is used to check for symbol conflicts.*/
+    std::unordered_set<std::string> symbol_;
+
+    template <bool OtherExportedByDefault>
+    explicit ModuleMetaBuilder(ModuleMetaBuilder<OtherExportedByDefault>&& mv) noexcept
+    : name_(std::move(mv.name_)),
+      default_(std::move(mv.default_)),
+      classes_(std::move(mv.classes_)),
+      enums_(std::move(mv.enums_)),
+      constants_(std::move(mv.constants_)),
+      functions_(std::move(mv.functions_)),
+      symbol_(std::move(mv.symbol_)) {}
+
+    template <bool>
+    friend class ModuleMetaBuilder;
+
+public:
+    /**
+     * @note The module does not support namespaces.
+     */
+    explicit constexpr ModuleMetaBuilder(std::string_view name) : name_{name} {}
+
+    [[nodiscard]] decltype(auto) exportDefault(ClassMeta const& meta) {
+        static_assert(!ExportedByDefault, "Cannot export default twice");
+        if (namespace_utils::hasNamespace(meta.name_)) {
+            throw std::invalid_argument("Default exports do not support namespace objects");
+        }
+        default_ = &meta;
+        return ModuleMetaBuilder<true>{std::move(*this)}; // NRVO/move
+    }
+    [[nodiscard]] decltype(auto) exportDefault(EnumMeta const& meta) {
+        static_assert(!ExportedByDefault, "Cannot export default twice");
+        if (namespace_utils::hasNamespace(meta.name_)) {
+            throw std::invalid_argument("Default exports do not support namespace objects");
+        }
+        default_ = &meta;
+        return ModuleMetaBuilder<true>{std::move(*this)}; // NRVO/move
+    }
+    [[nodiscard]] decltype(auto) exportDefault(GetterCallback getter) {
+        static_assert(!ExportedByDefault, "Cannot export default twice");
+        default_ = std::move(getter);
+        return ModuleMetaBuilder<true>{std::move(*this)}; // NRVO/move
+    }
+    [[nodiscard]] decltype(auto) exportDefault(FunctionCallback callback) {
+        static_assert(!ExportedByDefault, "Cannot export default twice");
+        default_ = std::move(callback);
+        return ModuleMetaBuilder<true>{std::move(*this)}; // NRVO/move
+    }
+    template <typename T>
+    [[nodiscard]] decltype(auto)
+    exportDefaultAsConstant(T&& v, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic) {
+        static_assert(!ExportedByDefault, "Cannot export default twice");
+        if constexpr (traits::Callable<T>) {
+            auto get = adapter::wrapGetter(std::forward<T>(v), policy);
+            default_ = std::move(get);
+        } else {
+            auto rw  = adapter::wrapStaticMember<T, true>(std::forward<T>(v), policy);
+            default_ = std::move(rw.first);
+        }
+        return ModuleMetaBuilder<true>{std::move(*this)}; // NRVO/move
+    }
+    template <traits::Callable T>
+    [[nodiscard]] decltype(auto) exportDefaultAsFunc(T&& v, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic) {
+        static_assert(!ExportedByDefault, "Cannot export default twice");
+        auto fn  = adapter::wrapFunction(std::forward<T>(v), policy);
+        default_ = std::move(fn);
+        return ModuleMetaBuilder<true>{std::move(*this)}; // NRVO/move
+    }
+
+
+    /** @note If the class is in a namespace, jspp will create the namespace */
+    [[nodiscard]] auto& exportClass(ClassMeta const& meta) {
+        if (symbol_.contains(meta.name_)) [[unlikely]] {
+            throw std::logic_error{"Export symbol conflict"};
+        }
+        symbol_.insert(meta.name_);
+        classes_.push_back(&meta);
+        return *this;
+    }
+
+    /** @note If the enum is in a namespace, jspp will create the namespace */
+    [[nodiscard]] auto& exportEnum(EnumMeta const& meta) {
+        if (symbol_.contains(meta.name_)) [[unlikely]] {
+            throw std::logic_error{"Export symbol conflict"};
+        }
+        symbol_.insert(meta.name_);
+        enums_.push_back(&meta);
+        return *this;
+    }
+
+    /* Export a constant. The getter will be called when the module is instantiated. */
+    [[nodiscard]] auto& exportConstant(std::string name, GetterCallback getter) {
+        if (symbol_.contains(name)) [[unlikely]] {
+            throw std::logic_error{"Export symbol conflict"};
+        }
+        symbol_.insert(name);
+        constants_.emplace_back(std::move(name), std::move(getter));
+        return *this;
+    }
+
+    /* Export a constant. The getter will be called when the module is instantiated. */
+    template <typename T>
+    [[nodiscard]] auto&
+    exportConstant(std::string name, T&& v, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic) {
+        if (symbol_.contains(name)) [[unlikely]] {
+            throw std::logic_error{"Export symbol conflict"};
+        }
+        symbol_.insert(name);
+        if constexpr (traits::Callable<T>) {
+            auto f = adapter::wrapGetter(std::forward<T>(v), policy);
+            constants_.emplace_back(std::move(name), std::move(f));
+        } else {
+            auto rw = adapter::wrapStaticMember<T, true>(std::forward<T>(v), policy);
+            constants_.emplace_back(std::move(name), std::move(rw.first));
+        }
+        return *this;
+    }
+
+    [[nodiscard]] auto& exportFunction(std::string name, FunctionCallback callback) {
+        if (symbol_.contains(name)) [[unlikely]] {
+            throw std::logic_error{"Export symbol conflict"};
+        }
+        symbol_.insert(name);
+        functions_.emplace_back(std::move(name), std::move(callback));
+        return *this;
+    }
+
+    template <traits::Callable F>
+        requires(!traits::isFunctionCallback_v<F>)
+    [[nodiscard]] auto&
+    exportFunction(std::string name, F&& f, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic) {
+        if (symbol_.contains(name)) [[unlikely]] {
+            throw std::logic_error{"Export symbol conflict"};
+        }
+        symbol_.insert(name);
+        auto fn = adapter::wrapFunction(std::forward<F>(f), policy);
+        functions_.emplace_back(std::move(name), std::move(fn));
+        return *this;
+    }
+
+    template <traits::Callable... F>
+        requires(sizeof...(F) > 1)
+    [[nodiscard]] auto& exportFunction(std::string name, F&&... f) {
+        if (symbol_.contains(name)) [[unlikely]] {
+            throw std::logic_error{"Export symbol conflict"};
+        }
+        symbol_.insert(name);
+        auto fn = adapter::wrapOverloadFuncAndExtraPolicy(std::forward<F>(f)...);
+        functions_.emplace_back(std::move(name), std::move(fn));
+        return *this;
+    }
+
+    ModuleMeta build() {
+        return ModuleMeta{
+            std::move(name_),
+            std::move(classes_),
+            std::move(enums_),
+            std::move(constants_),
+            std::move(functions_),
+            std::move(default_),
+        };
+    }
+};
+
+
 template <typename T>
-auto defClass(std::string_view name) {
+constexpr auto defClass(std::string_view name) {
     return ClassMetaBuilder<T>{name};
 }
 template <typename T>
-auto defEnum(std::string_view name) {
+constexpr auto defEnum(std::string_view name) {
     return EnumMetaBuilder<T>{name};
 }
-
+inline auto defModule(std::string_view name) { return ModuleMetaBuilder{name}; }
 
 } // namespace jspp::binding

@@ -92,6 +92,21 @@ inline constexpr bool validNamespace(std::string_view sv) {
     return true;
 }
 
+inline constexpr std::optional<std::string_view> getNamespaceRoot(std::string_view ns) {
+    if (!validNamespace(ns)) return std::nullopt;
+    size_t pos = ns.find('.');
+    if (pos == std::string_view::npos) return std::nullopt;
+    return ns.substr(0, pos);
+}
+
+inline std::string_view skipFirstSegment(std::string_view ns) {
+    size_t pos = ns.find('.');
+    if (pos == std::string_view::npos) {
+        return {};
+    }
+    return ns.substr(pos + 1);
+}
+
 // impl
 
 inline Local<Object> getParentNamespaceObject(Local<Object> obj, std::string_view ns) {
@@ -170,5 +185,22 @@ inline void mountNamespace(Local<Object> obj, std::string_view ns, Local<Value> 
     parent.set(key, value);
 }
 
+
+// static check namespace utils
+static_assert(hasNamespace("a.b.c.foo"));
+static_assert(hasNamespace("a") == false);
+
+static_assert(validNamespace("a.b.c.foo"));
+static_assert(validNamespace("a.b.c..foo") == false);
+static_assert(validNamespace(".a.b.c..foo") == false);
+
+static_assert(getNamespaceLeafString("foo") == "foo");
+static_assert(getNamespaceLeafString("a.b.c.foo") == "foo");
+
+static_assert(getNamespaceRoot("any") == std::nullopt);
+static_assert(getNamespaceRoot("net.core") == "net");
+static_assert(getNamespaceRoot("a.b.c.foo") == "a");
+static_assert(getNamespaceRoot("a..b.c.foo") == std::nullopt);
+static_assert(getNamespaceRoot(".a..b.c.foo") == std::nullopt);
 
 } // namespace jspp::namespace_utils

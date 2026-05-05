@@ -6,6 +6,7 @@ JSPP_WARNING_GUARD_BEGIN
 #include "v8-context.h"
 #include "v8-isolate.h"
 #include "v8-local-handle.h"
+#include "v8-exception.h"
 JSPP_WARNING_GUARD_END
 
 #include <tuple>

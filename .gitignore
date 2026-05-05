@@ -15,3 +15,9 @@ deps
 
 .vs
 CMakeSettings.json
+*.dll
+*.pdb
+*.exe
+*.lib
+*.obj
+node_modules
