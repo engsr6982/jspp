@@ -1,0 +1,13 @@
+{
+  "name": "example-node-addon",
+  "version": "1.0.0",
+  "description": "jspp Node.js Addon example",
+  "main": "example.js",
+  "scripts": {
+    "build": "cmake-js build --config RelWithDebInfo",
+    "test": "node example.js"
+  },
+  "dependencies": {
+    "cmake-js": "^7.4.0"
+  }
+}
