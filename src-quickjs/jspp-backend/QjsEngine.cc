@@ -16,11 +16,6 @@
 #include "jspp/core/ValueHelper.h"
 #include "queue/JobQueue.h"
 
-
-JSPP_WARNING_GUARD_BEGIN
-#include "quickjs.h"
-JSPP_WARNING_GUARD_END
-
 #include <array>
 #include <cassert>
 #include <concepts>
@@ -32,10 +27,15 @@ JSPP_WARNING_GUARD_END
 #include <type_traits>
 #include <unordered_set>
 #include <utility>
+#include <cstring>
+
+JSPP_WARNING_GUARD_BEGIN
+#include "quickjs.h"
+JSPP_WARNING_GUARD_END
 
 #if defined(_WIN32)
 #include <windows.h>
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__APPLE__)
 #include <dlfcn.h>
 #endif
 
