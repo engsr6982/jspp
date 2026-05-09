@@ -19,6 +19,7 @@
 #include <array>
 #include <cassert>
 #include <concepts>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -27,7 +28,6 @@
 #include <type_traits>
 #include <unordered_set>
 #include <utility>
-#include <cstring>
 
 JSPP_WARNING_GUARD_BEGIN
 #include "quickjs.h"
@@ -170,7 +170,7 @@ void QjsEngine::dispose() {
             JS_FreeValue(context_, v);
         }
         for (auto& v : enumObject_ | std::views::values) {
-            v.reset();
+            JS_FreeValue(context_, v);
         }
 
         classConstructors_.clear();
@@ -589,7 +589,7 @@ QjsModuleLoader::performLoadScriptModule(Engine* engine, std::filesystem::path c
     return m;
 }
 JSModuleDef* QjsModuleLoader::performNewNativeModule(Engine* engine, ModuleMeta const* meta) {
-    auto def      = JS_NewCModule(engine->context_, meta->name_.c_str(), [](JSContext* ctx, JSModuleDef* def) -> int {
+    auto def = JS_NewCModule(engine->context_, meta->name_.c_str(), [](JSContext* ctx, JSModuleDef* def) -> int {
         auto external      = JS_GetModulePrivateValue(ctx, def);
         auto pointerDataID = JS_GetClassID(external);
         auto engine        = static_cast<Engine*>(JS_GetOpaque(external, pointerDataID));
@@ -676,7 +676,7 @@ int QjsModuleLoader::performModuleExports(Engine* engine, JSModuleDef* def) try 
                         engine->performRegisterEnum(*typed);
                     }
                     auto& obj = engine->enumObject_.at(typed);
-                    return QjsHelper::getDupLocal(obj.get(), engine->context_);
+                    return QjsHelper::dupValue(obj, engine->context_);
 
                 } else if constexpr (std::is_same_v<type, GetterCallback>) {
                     auto&        getter = static_cast<GetterCallback const&>(arg);
@@ -768,7 +768,7 @@ int QjsModuleLoader::performModuleExports(Engine* engine, JSModuleDef* def) try 
             engine->performRegisterEnum(*e);
         }
         auto& obj = engine->enumObject_.at(e);
-        exportNamespaceObj(e->name_, obj.get());
+        exportNamespaceObj(e->name_, ValueHelper::wrap<Value>(JS_DupValue(engine->context_, obj)));
     }
     return 0;
 } catch (Exception const& e) {
@@ -987,7 +987,7 @@ Local<Object> Engine::performRegisterEnum(EnumMeta const& meta) {
     setToStringTag(object, meta.name_);
 
     registeredEnums_.emplace(meta.name_, &meta);
-    enumObject_.emplace(&meta, object);
+    enumObject_.emplace(&meta, qjs_backend::QjsHelper::getDupLocal(object, context_));
     return object;
 }
 

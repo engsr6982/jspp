@@ -160,7 +160,7 @@ protected:
     std::unordered_map<ClassMeta const*, std::pair<JSValue, JSValue>> classConstructors_{}; // ctor, prototype
     std::unordered_map<ClassMeta const*, JSValue>                     staticClassObject_{}; // static class only
 
-    std::unordered_map<EnumMeta const*, Global<Object>> enumObject_{}; // for native module lazy load
+    std::unordered_map<EnumMeta const*, JSValue> enumObject_{}; // for native module lazy load
 
     std::unordered_map<JSModuleDef*, ModuleMeta const*> module2meta_{}; // fast lookup, avoid AtomToCString
 };
