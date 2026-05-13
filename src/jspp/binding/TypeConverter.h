@@ -1055,6 +1055,23 @@ InstanceSetterCallback wrapInstanceSetter(Fn&& fn) {
         using UnwrapC = std::conditional_t<Trait::isConst, const C, C>;
         UnwrapC* inst = payload.unwrap<UnwrapC>();
 
+        // TODO: wrapInstanceSetter missing non-member function support
+        //
+        // wrapInstanceSetter unconditionally calls (inst->*f)(toCpp(args[0])),
+        // which only works for member function pointers. Lambda setters that
+        // take (C&, T) fail to compile because ->* is applied to a lambda.
+        //
+        // Fix: add an else branch mirroring wrapInstanceGetter's pattern:
+        //   if constexpr (std::is_member_function_pointer_v<Fn>) {
+        //       (inst->*f)(toCpp<Type>(args[0]));
+        //   } else {
+        //       static_assert(Trait::ArgsCount == 2, "Non-member setter must take (C&, T)");
+        //       f(*inst, toCpp<Type>(args[0]));
+        //   }
+        //
+        // Workaround: use member function pointers for setters, or expose as
+        // separate setX() methods instead of read-write properties.
+
         using Args = Trait::ArgsTuple;
         using Type = std::tuple_element_t<0, Args>;
         (inst->*f)(toCpp<Type>(args[0]));
