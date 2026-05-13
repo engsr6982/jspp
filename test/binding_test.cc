@@ -463,6 +463,8 @@ auto PropTestMeta = defClass<PropTest>("PropTest")
                         // always readonly
                         .prop_readonly("readonly_id", &PropTest::getId)
                         .prop_readonly("readonly_name", &PropTest::name_)
+                        // non member function pointer getter, e.g. lambda or function
+                        .prop_readonly("non_member_get_id", [](PropTest const& self) { return self.id_; })
                         .build();
 TEST_CASE_METHOD(BindingTestFixture, "bind property") {
     EngineScope scope{engine.get()};
@@ -507,6 +509,14 @@ TEST_CASE_METHOD(BindingTestFixture, "bind property") {
             || Catch::Matchers::ContainsSubstring("no setter for property") // quickjs
         )
     );
+
+    // non member function pointer getter, e.g. lambda or function
+    REQUIRE_NOTHROW(engine->evalScript(String::newString(R"(
+        let obj5 = new PropTest(123, 'hello');
+        if (obj5.non_member_get_id != 123) {
+            throw new Error("non_member_get_id should be 123");
+        }
+    )")));
 }
 
 

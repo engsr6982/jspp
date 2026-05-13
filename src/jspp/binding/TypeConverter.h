@@ -163,7 +163,7 @@ struct GenericTypeConverter {
         auto& engine  = EngineScope::currentEngineChecked();
         auto  payload = engine.getInstancePayload(value.asObject());
         if (!payload) {
-            throw Exception("Argument is not a native instance");
+            throw Exception("Argument is not a native instance", ExceptionType::TypeError);
         }
         return payload->unwrap<U>();
     }
@@ -992,13 +992,44 @@ InstanceGetterCallback wrapInstanceGetter(Fn&& fn, ReturnValuePolicy policy) {
         using Trait = traits::FunctionTraits<std::decay_t<Fn>>;
         using R     = Trait::ReturnType;
         static_assert(!std::is_void_v<R>, "Getter must return a value");
-        static_assert(Trait::ArgsCount == 0, "Getter must not take arguments");
 
         using UnwrapC = std::conditional_t<Trait::isConst, const C, C>;
         UnwrapC* inst = payload.unwrap<UnwrapC>();
 
-        decltype(auto) value = (inst->*f)();
-        return toJs(std::forward<decltype(value)>(value), policy, args.hasThiz() ? args.thiz() : Local<Value>{});
+        if constexpr (std::is_member_function_pointer_v<Fn>) {
+            static_assert(Trait::ArgsCount == 0, "Getter must not take arguments");
+            // T (C::*)();
+            decltype(auto) value = (inst->*f)();
+            return toJs(std::forward<decltype(value)>(value), policy, args.hasThiz() ? args.thiz() : Local<Value>{});
+        } else {
+            // non member function pointer getter, e.g. lambda or function
+            static_assert(Trait::ArgsCount == 1, "Non-member function pointer getter must take exactly one argument");
+
+            using Args       = Trait::ArgsTuple;
+            using arg_0_type = std::tuple_element_t<0, Args>;
+            static_assert(
+                std::is_same_v<traits::RawType_t<arg_0_type>, C>,
+                "First argument of non-member getter must match the bound class. "
+                "Expected instance of C&, C*, const C&, or const C*."
+            );
+
+            decltype(auto) traitInst = [&] {
+                if constexpr (std::is_pointer_v<arg_0_type>) {
+                    return inst;
+                } else {
+                    static_assert(
+                        std::is_lvalue_reference_v<arg_0_type>,
+                        "Non-member getter first argument must be C& or C*. Pass-by-value (C) is not supported."
+                    );
+                    if (inst == nullptr) [[unlikely]] {
+                        throw std::runtime_error("Cannot invoke getter: instance is null when passing by reference");
+                    }
+                    return *inst;
+                }
+            }();
+            decltype(auto) value = f(traitInst);
+            return toJs(std::forward<decltype(value)>(value), policy, args.hasThiz() ? args.thiz() : Local<Value>{});
+        }
     };
 }
 template <typename C, typename Fn>

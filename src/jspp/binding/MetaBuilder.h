@@ -2,6 +2,7 @@
 #include "ReturnValuePolicy.h"
 #include "TypeConverter.h"
 
+#include "jspp/binding/traits/FunctionTraits.h"
 #include "jspp/binding/traits/TypeTraits.h"
 #include "jspp/core/Concepts.h"
 #include "jspp/core/MetaInfo.h"
@@ -306,7 +307,7 @@ public:
 
     template <typename G>
     auto& prop_readonly(std::string name, G&& getter, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic)
-        requires(isInstanceClass && std::is_member_function_pointer_v<G>)
+        requires(isInstanceClass && traits::Callable<G>)
     {
         if constexpr (traits::isInstanceGetterCallback_v<G>) {
             return prop(std::move(name), std::forward<G>(getter), nullptr);
