@@ -1061,6 +1061,20 @@ InstanceSetterCallback wrapInstanceSetter(Fn&& fn) {
     };
 }
 
+// TODO: ValueTraits support for member pointers
+//
+// prop("r", &Color::r) fails when the member is inherited (e.g. Color inherits
+// from floatN4<Color>). wrapInstanceAccessor deduces C from the binding class
+// (Color) but the member pointer's actual class is the base (floatN4), causing
+// type mismatch in unwrap<const C>.
+//
+// Fix: introduce ValueTraits<Member> analogous to FunctionTraits to extract
+// class_type and value_type from the member pointer itself, eliminating the
+// need for the caller to provide C. wrapInstanceAccessor should accept an
+// arbitrary member pointer and unwrap using the deduced class_type.
+//
+// Workaround for now: use lambda getter/setter instead of member pointers
+// for inherited members.
 template <typename C, bool forceReadonly, typename Ty>
 std::pair<InstanceGetterCallback, InstanceSetterCallback>
 wrapInstanceAccessor(Ty C::* member, ReturnValuePolicy policy) {
