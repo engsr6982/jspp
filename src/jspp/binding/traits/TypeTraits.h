@@ -9,17 +9,13 @@ namespace jspp::binding::traits {
 
 template <typename T>
 struct RawTypeHelper {
-    using Decayed = std::decay_t<T>;
-
-    // static_assert(
-    //     !std::is_pointer_v<Decayed> || concepts::StringLike<Decayed>,
-    //     "RawType does not allow raw pointer types except string-like"
-    // );
+    using Decayed  = std::decay_t<T>;
+    using Stripped = std::remove_pointer_t<Decayed>;
 
     using type = std::conditional_t<
         concepts::StringLike<Decayed>,
-        std::string_view,              // 命中 StringLike -> 强制映射为 string_view (fix const char[N])
-        std::remove_pointer_t<Decayed> // 其他类型 -> 移除指针
+        std::string_view,             // StringLike<T> forcibly mapped to string_view (fix const char[N])
+        std::remove_const_t<Stripped> // Other types: remove pointers and modifiers
         >;
 };
 
