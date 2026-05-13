@@ -715,25 +715,26 @@ template <typename Fn>
 FunctionCallback wrapFunction(Fn&& fn, ReturnValuePolicy policy) {
     if constexpr (traits::isFunctionCallback_v<Fn>) {
         return std::forward<Fn>(fn);
+    } else {
+        return [f = std::forward<Fn>(fn), policy](Arguments const& args) -> Local<Value> {
+            using Trait = traits::FunctionTraits<std::decay_t<Fn>>;
+            using R     = typename Trait::ReturnType;
+            using Tuple = typename Trait::ArgsTuple;
+
+            constexpr auto Count = Trait::ArgsCount;
+            if (args.length() != Count) [[unlikely]] {
+                throw Exception("argument count mismatch", Exception ::Type::TypeError);
+            }
+
+            if constexpr (std::is_void_v<R>) {
+                std::apply(f, ConvertArgsToTuple<Tuple>(args, std::make_index_sequence<Count>()));
+                return {}; // undefined
+            } else {
+                decltype(auto) ret = std::apply(f, ConvertArgsToTuple<Tuple>(args, std::make_index_sequence<Count>()));
+                return toJs(std::forward<decltype(ret)>(ret), policy, args.hasThiz() ? args.thiz() : Local<Value>{});
+            }
+        };
     }
-    return [f = std::forward<Fn>(fn), policy](Arguments const& args) -> Local<Value> {
-        using Trait = traits::FunctionTraits<std::decay_t<Fn>>;
-        using R     = typename Trait::ReturnType;
-        using Tuple = typename Trait::ArgsTuple;
-
-        constexpr auto Count = Trait::ArgsCount;
-        if (args.length() != Count) [[unlikely]] {
-            throw Exception("argument count mismatch", Exception ::Type::TypeError);
-        }
-
-        if constexpr (std::is_void_v<R>) {
-            std::apply(f, ConvertArgsToTuple<Tuple>(args, std::make_index_sequence<Count>()));
-            return {}; // undefined
-        } else {
-            decltype(auto) ret = std::apply(f, ConvertArgsToTuple<Tuple>(args, std::make_index_sequence<Count>()));
-            return toJs(std::forward<decltype(ret)>(ret), policy, args.hasThiz() ? args.thiz() : Local<Value>{});
-        }
-    };
 }
 
 
@@ -810,32 +811,34 @@ template <typename Fn>
 GetterCallback wrapGetter(Fn&& getter, ReturnValuePolicy policy) {
     if constexpr (traits::isGetterCallback_v<Fn>) {
         return std::forward<Fn>(getter);
-    }
-    return [get = std::forward<Fn>(getter), policy]() -> Local<Value> {
-        using Trait = traits::FunctionTraits<std::decay_t<Fn>>;
-        using R     = Trait::ReturnType;
-        static_assert(!std::is_void_v<R>, "Getter must return a value");
-        static_assert(Trait::ArgsCount == 0, "Getter must not take arguments");
+    } else {
+        return [get = std::forward<Fn>(getter), policy]() -> Local<Value> {
+            using Trait = traits::FunctionTraits<std::decay_t<Fn>>;
+            using R     = Trait::ReturnType;
+            static_assert(!std::is_void_v<R>, "Getter must return a value");
+            static_assert(Trait::ArgsCount == 0, "Getter must not take arguments");
 
-        decltype(auto) value = std::invoke(get);
-        return toJs(std::forward<decltype(value)>(value), policy, {});
-    };
+            decltype(auto) value = std::invoke(get);
+            return toJs(std::forward<decltype(value)>(value), policy, {});
+        };
+    }
 }
 template <typename Fn>
 SetterCallback wrapSetter(Fn&& setter) {
     if constexpr (traits::isSetterCallback_v<Fn>) {
         return std::forward<Fn>(setter);
-    }
-    return [set = std::forward<Fn>(setter)](Local<Value> const& value) -> void {
-        using Trait = traits::FunctionTraits<std::decay_t<Fn>>;
-        using R     = Trait::ReturnType;
-        static_assert(std::is_void_v<R>, "Setter must not return a value");
-        static_assert(Trait::ArgsCount == 1, "Setter must take one argument");
+    } else {
+        return [set = std::forward<Fn>(setter)](Local<Value> const& value) -> void {
+            using Trait = traits::FunctionTraits<std::decay_t<Fn>>;
+            using R     = Trait::ReturnType;
+            static_assert(std::is_void_v<R>, "Setter must not return a value");
+            static_assert(Trait::ArgsCount == 1, "Setter must take one argument");
 
-        using Args = Trait::ArgsTuple;
-        using Type = std::tuple_element_t<0, Args>;
-        std::invoke(set, toCpp<Type>(value));
-    };
+            using Args = Trait::ArgsTuple;
+            using Type = std::tuple_element_t<0, Args>;
+            std::invoke(set, toCpp<Type>(value));
+        };
+    }
 }
 
 template <typename Ty, bool forceReadonly = false>
@@ -903,44 +906,49 @@ template <typename C, typename Fn>
 InstanceMethodCallback wrapInstanceMethod(Fn&& fn, ReturnValuePolicy policy) {
     if constexpr (traits::isInstanceMethodCallback_v<Fn>) {
         return std::forward<Fn>(fn); // 已是标准的回调，直接转发不需要进行绑定
-    }
-    return [f = std::forward<Fn>(fn), policy](InstancePayload& payload, const Arguments& args) -> Local<Value> {
-        using Trait = traits::FunctionTraits<std::decay_t<Fn>>;
-        using R     = typename Trait::ReturnType;
-        using Tuple = typename Trait::ArgsTuple;
+    } else {
+        return [f = std::forward<Fn>(fn), policy](InstancePayload& payload, const Arguments& args) -> Local<Value> {
+            using Trait = traits::FunctionTraits<std::decay_t<Fn>>;
+            using R     = typename Trait::ReturnType;
+            using Tuple = typename Trait::ArgsTuple;
 
-        constexpr size_t ArgsCount = Trait::ArgsCount;
-        if (args.length() != ArgsCount) [[unlikely]] {
-            throw Exception("argument count mismatch", Exception::Type::TypeError);
-        }
-
-        using UnwrapC = std::conditional_t<Trait::isConst, const C, C>;
-        UnwrapC* inst = payload.unwrap<UnwrapC>();
-
-        if constexpr (std::is_void_v<R>) {
-            std::apply(
-                [inst, &f](auto&&... unpackedArgs) {
-                    (inst->*f)(std::forward<decltype(unpackedArgs)>(unpackedArgs)...);
-                },
-                ConvertArgsToTuple<Tuple>(args, std::make_index_sequence<ArgsCount>())
-            );
-            return {}; // undefined
-        } else {
-            decltype(auto) ret = std::apply(
-                [inst, &f](auto&&... unpackedArgs) -> R {
-                    return (inst->*f)(std::forward<decltype(unpackedArgs)>(unpackedArgs)...);
-                },
-                ConvertArgsToTuple<Tuple>(args, std::make_index_sequence<ArgsCount>())
-            );
-            // 特殊情况，对于 Builder 模式，返回 this
-            if constexpr (std::is_same_v<R, C&>) {
-                assert(args.hasThiz() && "this is required for Builder pattern");
-                return args.thiz();
-            } else {
-                return toJs(std::forward<decltype(ret)>(ret), policy, args.hasThiz() ? args.thiz() : Local<Value>{});
+            constexpr size_t ArgsCount = Trait::ArgsCount;
+            if (args.length() != ArgsCount) [[unlikely]] {
+                throw Exception("argument count mismatch", Exception::Type::TypeError);
             }
-        }
-    };
+
+            using UnwrapC = std::conditional_t<Trait::isConst, const C, C>;
+            UnwrapC* inst = payload.unwrap<UnwrapC>();
+
+            if constexpr (std::is_void_v<R>) {
+                std::apply(
+                    [inst, &f](auto&&... unpackedArgs) {
+                        (inst->*f)(std::forward<decltype(unpackedArgs)>(unpackedArgs)...);
+                    },
+                    ConvertArgsToTuple<Tuple>(args, std::make_index_sequence<ArgsCount>())
+                );
+                return {}; // undefined
+            } else {
+                decltype(auto) ret = std::apply(
+                    [inst, &f](auto&&... unpackedArgs) -> R {
+                        return (inst->*f)(std::forward<decltype(unpackedArgs)>(unpackedArgs)...);
+                    },
+                    ConvertArgsToTuple<Tuple>(args, std::make_index_sequence<ArgsCount>())
+                );
+                // 特殊情况，对于 Builder 模式，返回 this
+                if constexpr (std::is_same_v<R, C&>) {
+                    assert(args.hasThiz() && "this is required for Builder pattern");
+                    return args.thiz();
+                } else {
+                    return toJs(
+                        std::forward<decltype(ret)>(ret),
+                        policy,
+                        args.hasThiz() ? args.thiz() : Local<Value>{}
+                    );
+                }
+            }
+        };
+    }
 }
 
 template <size_t Len>
@@ -991,91 +999,107 @@ template <typename C, typename Fn>
 InstanceGetterCallback wrapInstanceGetter(Fn&& fn, ReturnValuePolicy policy) {
     if constexpr (traits::isInstanceGetterCallback_v<Fn>) {
         return std::forward<Fn>(fn);
-    }
-    return [f = std::forward<Fn>(fn), policy](InstancePayload& payload, const Arguments& args) -> Local<Value> {
-        using Trait = traits::FunctionTraits<std::decay_t<Fn>>;
-        using R     = Trait::ReturnType;
-        static_assert(!std::is_void_v<R>, "Getter must return a value");
+    } else {
+        return [f = std::forward<Fn>(fn), policy](InstancePayload& payload, const Arguments& args) -> Local<Value> {
+            using Trait = traits::FunctionTraits<std::decay_t<Fn>>;
+            using R     = Trait::ReturnType;
+            static_assert(!std::is_void_v<R>, "Getter must return a value");
 
-        using UnwrapC = std::conditional_t<Trait::isConst, const C, C>;
-        UnwrapC* inst = payload.unwrap<UnwrapC>();
+            using UnwrapC = std::conditional_t<Trait::isConst, const C, C>;
+            UnwrapC* inst = payload.unwrap<UnwrapC>();
 
-        if constexpr (std::is_member_function_pointer_v<Fn>) {
-            static_assert(Trait::ArgsCount == 0, "Getter must not take arguments");
-            // T (C::*)();
-            decltype(auto) value = (inst->*f)();
-            return toJs(std::forward<decltype(value)>(value), policy, args.hasThiz() ? args.thiz() : Local<Value>{});
-        } else {
-            // non member function pointer getter, e.g. lambda or function
-            static_assert(Trait::ArgsCount == 1, "Non-member function pointer getter must take exactly one argument");
+            if constexpr (std::is_member_function_pointer_v<Fn>) {
+                static_assert(Trait::ArgsCount == 0, "Getter must not take arguments");
+                // T (C::*)();
+                decltype(auto) value = (inst->*f)();
+                return toJs(
+                    std::forward<decltype(value)>(value),
+                    policy,
+                    args.hasThiz() ? args.thiz() : Local<Value>{}
+                );
+            } else {
+                // non member function pointer getter, e.g. lambda or function
+                static_assert(
+                    Trait::ArgsCount == 1,
+                    "Non-member function pointer getter must take exactly one argument"
+                );
 
-            using Args       = Trait::ArgsTuple;
-            using arg_0_type = std::tuple_element_t<0, Args>;
-            static_assert(
-                std::is_same_v<traits::RawType_t<arg_0_type>, C>,
-                "First argument of non-member getter must match the bound class. "
-                "Expected instance of C&, C*, const C&, or const C*."
-            );
-            static_assert(
-                !(std::is_polymorphic_v<C> && !std::is_lvalue_reference_v<arg_0_type>
-                  && !std::is_pointer_v<arg_0_type>),
-                "Pass-by-value of a polymorphic type is not allowed (slicing risk). Use C&, const C&, or C* instead."
-            );
+                using Args       = Trait::ArgsTuple;
+                using arg_0_type = std::tuple_element_t<0, Args>;
+                static_assert(
+                    std::is_same_v<traits::RawType_t<arg_0_type>, C>,
+                    "First argument of non-member getter must match the bound class. "
+                    "Expected instance of C&, C*, const C&, or const C*."
+                );
+                static_assert(
+                    !(std::is_polymorphic_v<C> && !std::is_lvalue_reference_v<arg_0_type>
+                      && !std::is_pointer_v<arg_0_type>),
+                    "Pass-by-value of a polymorphic type is not allowed (slicing risk). Use C&, const C&, or C* "
+                    "instead."
+                );
 
-            decltype(auto) traitInst = [&] {
-                if constexpr (std::is_pointer_v<arg_0_type>) {
-                    return inst;
-                } else {
-                    static_assert(
-                        std::is_lvalue_reference_v<arg_0_type>,
-                        "Non-member getter first argument must be C& or C*. Pass-by-value (C) is not supported."
-                    );
-                    if (inst == nullptr) [[unlikely]] {
-                        throw std::runtime_error("Cannot invoke getter: instance is null when passing by reference");
+                decltype(auto) traitInst = [&] {
+                    if constexpr (std::is_pointer_v<arg_0_type>) {
+                        return inst;
+                    } else {
+                        static_assert(
+                            std::is_lvalue_reference_v<arg_0_type>,
+                            "Non-member getter first argument must be C& or C*. Pass-by-value (C) is not supported."
+                        );
+                        if (inst == nullptr) [[unlikely]] {
+                            throw std::runtime_error(
+                                "Cannot invoke getter: instance is null when passing by reference"
+                            );
+                        }
+                        return *inst;
                     }
-                    return *inst;
-                }
-            }();
-            decltype(auto) value = f(traitInst);
-            return toJs(std::forward<decltype(value)>(value), policy, args.hasThiz() ? args.thiz() : Local<Value>{});
-        }
-    };
+                }();
+                decltype(auto) value = f(traitInst);
+                return toJs(
+                    std::forward<decltype(value)>(value),
+                    policy,
+                    args.hasThiz() ? args.thiz() : Local<Value>{}
+                );
+            }
+        };
+    }
 }
 template <typename C, typename Fn>
 InstanceSetterCallback wrapInstanceSetter(Fn&& fn) {
     if constexpr (traits::isInstanceSetterCallback_v<Fn>) {
         return std::forward<Fn>(fn);
+    } else {
+        return [f = std::forward<Fn>(fn)](InstancePayload& payload, const Arguments& args) {
+            using Trait = traits::FunctionTraits<std::decay_t<Fn>>;
+            using R     = Trait::ReturnType;
+            static_assert(std::is_void_v<R>, "Setter must not return a value");
+            static_assert(Trait::ArgsCount == 1, "Setter must take one argument");
+
+            using UnwrapC = std::conditional_t<Trait::isConst, const C, C>;
+            UnwrapC* inst = payload.unwrap<UnwrapC>();
+
+            // TODO: wrapInstanceSetter missing non-member function support
+            //
+            // wrapInstanceSetter unconditionally calls (inst->*f)(toCpp(args[0])),
+            // which only works for member function pointers. Lambda setters that
+            // take (C&, T) fail to compile because ->* is applied to a lambda.
+            //
+            // Fix: add an else branch mirroring wrapInstanceGetter's pattern:
+            //   if constexpr (std::is_member_function_pointer_v<Fn>) {
+            //       (inst->*f)(toCpp<Type>(args[0]));
+            //   } else {
+            //       static_assert(Trait::ArgsCount == 2, "Non-member setter must take (C&, T)");
+            //       f(*inst, toCpp<Type>(args[0]));
+            //   }
+            //
+            // Workaround: use member function pointers for setters, or expose as
+            // separate setX() methods instead of read-write properties.
+
+            using Args = Trait::ArgsTuple;
+            using Type = std::tuple_element_t<0, Args>;
+            (inst->*f)(toCpp<Type>(args[0]));
+        };
     }
-    return [f = std::forward<Fn>(fn)](InstancePayload& payload, const Arguments& args) {
-        using Trait = traits::FunctionTraits<std::decay_t<Fn>>;
-        using R     = Trait::ReturnType;
-        static_assert(std::is_void_v<R>, "Setter must not return a value");
-        static_assert(Trait::ArgsCount == 1, "Setter must take one argument");
-
-        using UnwrapC = std::conditional_t<Trait::isConst, const C, C>;
-        UnwrapC* inst = payload.unwrap<UnwrapC>();
-
-        // TODO: wrapInstanceSetter missing non-member function support
-        //
-        // wrapInstanceSetter unconditionally calls (inst->*f)(toCpp(args[0])),
-        // which only works for member function pointers. Lambda setters that
-        // take (C&, T) fail to compile because ->* is applied to a lambda.
-        //
-        // Fix: add an else branch mirroring wrapInstanceGetter's pattern:
-        //   if constexpr (std::is_member_function_pointer_v<Fn>) {
-        //       (inst->*f)(toCpp<Type>(args[0]));
-        //   } else {
-        //       static_assert(Trait::ArgsCount == 2, "Non-member setter must take (C&, T)");
-        //       f(*inst, toCpp<Type>(args[0]));
-        //   }
-        //
-        // Workaround: use member function pointers for setters, or expose as
-        // separate setX() methods instead of read-write properties.
-
-        using Args = Trait::ArgsTuple;
-        using Type = std::tuple_element_t<0, Args>;
-        (inst->*f)(toCpp<Type>(args[0]));
-    };
 }
 
 // TODO: ValueTraits support for member pointers
