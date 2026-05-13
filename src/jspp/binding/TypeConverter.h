@@ -618,6 +618,10 @@ decltype(auto) toCpp(Local<Value> const& value) {
         }
         // 请求值传递 (T)
         else {
+            static_assert(
+                !std::is_polymorphic_v<BareT>,
+                "toCpp<T> with polymorphic T by value is forbidden (slicing UB). Use T&, const T&, or T* instead."
+            );
             if constexpr (!is_conv_ptr && !is_conv_lref) {
                 if constexpr (std::is_same_v<RawConvRet, BareT>
                               || internal::CppValueTypeTransformer_v<RawConvRet, BareT>) {
@@ -1011,6 +1015,11 @@ InstanceGetterCallback wrapInstanceGetter(Fn&& fn, ReturnValuePolicy policy) {
                 std::is_same_v<traits::RawType_t<arg_0_type>, C>,
                 "First argument of non-member getter must match the bound class. "
                 "Expected instance of C&, C*, const C&, or const C*."
+            );
+            static_assert(
+                !(std::is_polymorphic_v<C> && !std::is_lvalue_reference_v<arg_0_type>
+                  && !std::is_pointer_v<arg_0_type>),
+                "Pass-by-value of a polymorphic type is not allowed (slicing risk). Use C&, const C&, or C* instead."
             );
 
             decltype(auto) traitInst = [&] {
