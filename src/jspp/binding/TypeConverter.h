@@ -562,10 +562,14 @@ decltype(auto) toCpp(Local<Value> const& value) {
     using RequestT = std::remove_pointer_t<std::remove_reference_t<T>>;
 
     // ------------------------------------------------------------------
-    // 支持完美类型转发的 Native Class 转换器 (GenericTypeConverter)
+    // TypeConverter that supports perfect forwarding (GenericTypeConverter)
     // ------------------------------------------------------------------
     if constexpr (requires { Conv::template toCpp<RequestT>(value); }) {
-        auto p = Conv::template toCpp<RequestT>(value);
+        using UnwrappedT = std::conditional_t<
+            !std::is_pointer_v<T> && !std::is_reference_v<T>, // if request copy use const RequestT, else use RequestT
+            const RequestT,
+            RequestT>;
+        auto p = Conv::template toCpp<UnwrappedT>(value);
         if (!p) [[unlikely]] {
             throw std::runtime_error("TypeConverter::toCpp returned a null pointer.");
         }
@@ -576,7 +580,7 @@ decltype(auto) toCpp(Local<Value> const& value) {
         }
     }
     // ------------------------------------------------------------------
-    // 定长返回类型的普通转换器 (基础类型、STL、Enum 等)
+    // Fixed-length return type ordinary converter (basic types, STL, Enum, etc.)
     // ------------------------------------------------------------------
     else {
         using ConvRet    = decltype(Conv::toCpp(std::declval<Local<Value>>()));
@@ -585,7 +589,7 @@ decltype(auto) toCpp(Local<Value> const& value) {
         constexpr bool is_conv_ptr  = std::is_pointer_v<std::remove_reference_t<ConvRet>>;
         constexpr bool is_conv_lref = std::is_lvalue_reference_v<ConvRet>;
 
-        // 请求左值引用 (T& 或 const T&)
+        // Request a lvalue reference (T& or const T&)
         if constexpr (std::is_lvalue_reference_v<T>) {
             if constexpr (is_conv_ptr) {
                 auto p = Conv::toCpp(value);
@@ -594,7 +598,8 @@ decltype(auto) toCpp(Local<Value> const& value) {
                 }
                 return static_cast<T>(*p);
             } else if constexpr (is_conv_lref || std::is_const_v<std::remove_reference_t<T>>) {
-                // 直接 return，让 decltype(auto) 决定是返回引用还是按值返回 (防临时变量悬垂)
+                // Return directly, letting decltype(auto) decide whether to return
+                //  by reference or by value (to prevent dangling of temporary variables)
                 return Conv::toCpp(value);
             } else {
                 static_assert(
@@ -603,7 +608,7 @@ decltype(auto) toCpp(Local<Value> const& value) {
                 );
             }
         }
-        // 请求指针 (T*)
+        // Request pointer (T*)
         else if constexpr (std::is_pointer_v<T>) {
             if constexpr (is_conv_ptr) {
                 return Conv::toCpp(value);
@@ -616,7 +621,7 @@ decltype(auto) toCpp(Local<Value> const& value) {
                 );
             }
         }
-        // 请求值传递 (T)
+        // Pass by value (T)
         else {
             static_assert(
                 !std::is_polymorphic_v<BareT>,
