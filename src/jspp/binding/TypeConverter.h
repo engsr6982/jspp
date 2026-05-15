@@ -421,12 +421,19 @@ struct TypeConverter<std::shared_ptr<T>> {
 
         auto& engine  = EngineScope::currentEngineChecked();
         auto  payload = engine.getInstancePayload(value.asObject());
-        if (payload == nullptr) {
+        if (payload == nullptr) [[unlikely]] {
             throw Exception("Argument is not a native instance");
         }
 
-        auto& holder      = payload->getHolder();
-        auto  shared_void = holder.get_shared_ptr();
+        auto& holder = payload->getHolder();
+        if (holder.is_const() && !std::is_const_v<T>) [[unlikely]] {
+            throw Exception(
+                "Cannot transfer ownership: The JS object is const, but C++ requires a mutable std::shared_ptr.",
+                Exception::Type::TypeError
+            );
+        }
+
+        auto shared_void = holder.get_shared_ptr();
         if (!shared_void) {
             throw Exception("Underlying C++ object is not managed by std::shared_ptr");
         }
@@ -488,8 +495,7 @@ struct TypeConverter<std::unique_ptr<T, Deleter>> {
         }
 
         auto& holder = payload->getHolder();
-
-        if (holder.is_const() && !std::is_const_v<T>) {
+        if (holder.is_const() && !std::is_const_v<T>) [[unlikely]] {
             throw Exception(
                 "Cannot transfer ownership: The JS object is const, but C++ requires a mutable std::unique_ptr.",
                 Exception::Type::TypeError
@@ -524,9 +530,7 @@ struct TypeConverter<std::reference_wrapper<T>> {
         return TypeConverter<T>::toJs(value.get(), policy, parent);
     }
 
-    static std::reference_wrapper<T> toCpp(Local<Value> const& value) {
-        return std::ref(TypeConverter<T>::toCpp(value));
-    }
+    static std::reference_wrapper<T> toCpp(Local<Value> const& value) { return std::ref(binding::toCpp<T&>(value)); }
 };
 
 template <>
