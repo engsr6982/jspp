@@ -95,7 +95,7 @@ TEST_CASE_METHOD(
     engine->registerClass(Test);
 
     REQUIRE_NOTHROW(engine->evalScript(String::newString("new Derived(1).foo = 42")));
-    REQUIRE_THROWS(engine->evalScript(String::newString("new Derived(1).bar = 42")));
+    REQUIRE_THROWS(engine->evalScript(String::newString("\"use strict\"; new Derived(1).bar = 42")));
 }
 
 
