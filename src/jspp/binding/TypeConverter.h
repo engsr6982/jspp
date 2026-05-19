@@ -1090,9 +1090,6 @@ InstanceSetterCallback wrapInstanceSetter(Fn&& fn) {
             using R     = Trait::ReturnType;
             static_assert(std::is_void_v<R>, "Setter must not return a value");
 
-            using UnwrapC = std::conditional_t<Trait::isConst, const C, C>;
-            UnwrapC* inst = payload.unwrap<UnwrapC>();
-
             if constexpr (std::is_member_function_pointer_v<Fn>) {
                 // Member function: use Trait::isConst to determine instance mutability
                 static_assert(Trait::ArgsCount == 1, "Setter must take one argument");
