@@ -444,6 +444,9 @@ public:
 
     PropTest(int id, std::string name) : id_{id}, name_{std::move(name)} {}
 
+    PropTest(PropTest const&)            = delete;
+    PropTest& operator=(PropTest const&) = delete;
+
     int getId() const { return id_; }
 
     void setId(int id) { id_ = id; }
@@ -465,6 +468,15 @@ auto PropTestMeta = defClass<PropTest>("PropTest")
                         .prop_readonly("readonly_name", &PropTest::name_)
                         // non member function pointer getter, e.g. lambda or function
                         .prop_readonly("non_member_get_id", [](PropTest const& self) { return self.id_; })
+                        .prop(
+                            "non_member_get_set",
+                            [](PropTest const& self) {
+                                return self.id_; //
+                            },
+                            [](PropTest& self, int id) {
+                                self.id_ = id; //
+                            }
+                        )
                         .build();
 TEST_CASE_METHOD(BindingTestFixture, "bind property") {
     EngineScope scope{engine.get()};
@@ -515,6 +527,14 @@ TEST_CASE_METHOD(BindingTestFixture, "bind property") {
         let obj5 = new PropTest(123, 'hello');
         if (obj5.non_member_get_id != 123) {
             throw new Error("non_member_get_id should be 123");
+        }
+    )")));
+    REQUIRE_NOTHROW(engine->evalScript(String::newString(R"(
+        let obj6 = new PropTest(123, 'hello');
+        const expected = obj6.non_member_get_set + 1;
+        obj6.non_member_get_set = expected;
+        if (obj6.non_member_get_set != expected) {
+            throw new Error(`non_member_get_set should be ${expected}, current: ${obj6.non_member_get_set}`);
         }
     )")));
 }

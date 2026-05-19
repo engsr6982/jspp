@@ -1014,12 +1014,12 @@ InstanceGetterCallback wrapInstanceGetter(Fn&& fn, ReturnValuePolicy policy) {
             using R     = Trait::ReturnType;
             static_assert(!std::is_void_v<R>, "Getter must return a value");
 
-            using UnwrapC = std::conditional_t<Trait::isConst, const C, C>;
-            UnwrapC* inst = payload.unwrap<UnwrapC>();
-
             if constexpr (std::is_member_function_pointer_v<Fn>) {
                 static_assert(Trait::ArgsCount == 0, "Getter must not take arguments");
-                // T (C::*)();
+                // Member function: use Trait::isConst to determine instance mutability
+                using UnwrapC = std::conditional_t<Trait::isConst, const C, C>;
+                UnwrapC* inst = payload.unwrap<UnwrapC>();
+
                 decltype(auto) value = (inst->*f)();
                 return toJs(
                     std::forward<decltype(value)>(value),
@@ -1047,28 +1047,35 @@ InstanceGetterCallback wrapInstanceGetter(Fn&& fn, ReturnValuePolicy policy) {
                     "instead."
                 );
 
-                decltype(auto) traitInst = [&] {
-                    if constexpr (std::is_pointer_v<arg_0_type>) {
-                        return inst;
-                    } else {
-                        static_assert(
-                            std::is_lvalue_reference_v<arg_0_type>,
-                            "Non-member getter first argument must be C& or C*. Pass-by-value (C) is not supported."
-                        );
-                        if (inst == nullptr) [[unlikely]] {
-                            throw std::runtime_error(
-                                "Cannot invoke getter: instance is null when passing by reference"
-                            );
-                        }
-                        return *inst;
+                // Non-member function (Lambda): deduce mutability from the first argument's type
+                using UnwrapC = std::conditional_t<
+                    std::is_const_v<std::remove_pointer_t<std::remove_reference_t<arg_0_type>>>,
+                    const C,
+                    C>;
+                UnwrapC* inst = payload.unwrap<UnwrapC>();
+
+                if constexpr (std::is_pointer_v<arg_0_type>) {
+                    decltype(auto) value = f(inst);
+                    return toJs(
+                        std::forward<decltype(value)>(value),
+                        policy,
+                        args.hasThiz() ? args.thiz() : Local<Value>{}
+                    );
+                } else {
+                    static_assert(
+                        std::is_lvalue_reference_v<arg_0_type>,
+                        "Non-member getter first argument must be C& or C*. Pass-by-value (C) is not supported."
+                    );
+                    if (inst == nullptr) [[unlikely]] {
+                        throw std::runtime_error("Cannot invoke getter: instance is null when passing by reference");
                     }
-                }();
-                decltype(auto) value = f(traitInst);
-                return toJs(
-                    std::forward<decltype(value)>(value),
-                    policy,
-                    args.hasThiz() ? args.thiz() : Local<Value>{}
-                );
+                    decltype(auto) value = f(*inst);
+                    return toJs(
+                        std::forward<decltype(value)>(value),
+                        policy,
+                        args.hasThiz() ? args.thiz() : Local<Value>{}
+                    );
+                }
             }
         };
     }
@@ -1082,31 +1089,53 @@ InstanceSetterCallback wrapInstanceSetter(Fn&& fn) {
             using Trait = traits::FunctionTraits<std::decay_t<Fn>>;
             using R     = Trait::ReturnType;
             static_assert(std::is_void_v<R>, "Setter must not return a value");
-            static_assert(Trait::ArgsCount == 1, "Setter must take one argument");
 
             using UnwrapC = std::conditional_t<Trait::isConst, const C, C>;
             UnwrapC* inst = payload.unwrap<UnwrapC>();
 
-            // TODO: wrapInstanceSetter missing non-member function support
-            //
-            // wrapInstanceSetter unconditionally calls (inst->*f)(toCpp(args[0])),
-            // which only works for member function pointers. Lambda setters that
-            // take (C&, T) fail to compile because ->* is applied to a lambda.
-            //
-            // Fix: add an else branch mirroring wrapInstanceGetter's pattern:
-            //   if constexpr (std::is_member_function_pointer_v<Fn>) {
-            //       (inst->*f)(toCpp<Type>(args[0]));
-            //   } else {
-            //       static_assert(Trait::ArgsCount == 2, "Non-member setter must take (C&, T)");
-            //       f(*inst, toCpp<Type>(args[0]));
-            //   }
-            //
-            // Workaround: use member function pointers for setters, or expose as
-            // separate setX() methods instead of read-write properties.
+            if constexpr (std::is_member_function_pointer_v<Fn>) {
+                // Member function: use Trait::isConst to determine instance mutability
+                static_assert(Trait::ArgsCount == 1, "Setter must take one argument");
+                using UnwrapC = std::conditional_t<Trait::isConst, const C, C>;
+                UnwrapC* inst = payload.unwrap<UnwrapC>();
 
-            using Args = Trait::ArgsTuple;
-            using Type = std::tuple_element_t<0, Args>;
-            (inst->*f)(toCpp<Type>(args[0]));
+                using Args = Trait::ArgsTuple;
+                using Type = std::tuple_element_t<0, Args>;
+                (inst->*f)(toCpp<Type>(args[0]));
+            } else {
+                // Non-member functions (such as Lambda) require
+                // the first parameter to be a reference/pointer to the bound instance
+                static_assert(Trait::ArgsCount == 2, "Non-member setter must take (C&, T) or (C*, T)");
+
+                using Args       = Trait::ArgsTuple;
+                using arg_0_type = std::tuple_element_t<0, Args>;
+                using Type       = std::tuple_element_t<1, Args>; // JS 传入的参数
+
+                static_assert(
+                    std::is_same_v<traits::RawType_t<arg_0_type>, C>,
+                    "First argument of non-member setter must match the bound class."
+                );
+
+                // deduce mutability from the first argument's type
+                using UnwrapC = std::conditional_t<
+                    std::is_const_v<std::remove_pointer_t<std::remove_reference_t<arg_0_type>>>,
+                    const C,
+                    C>;
+                UnwrapC* inst = payload.unwrap<UnwrapC>();
+
+                if constexpr (std::is_pointer_v<arg_0_type>) {
+                    f(inst, toCpp<Type>(args[0]));
+                } else {
+                    static_assert(
+                        std::is_lvalue_reference_v<arg_0_type>,
+                        "Non-member setter first arg must be C& or C*"
+                    );
+                    if (inst == nullptr) [[unlikely]] {
+                        throw std::runtime_error("Cannot invoke setter: instance is null");
+                    }
+                    f(*inst, toCpp<Type>(args[0]));
+                }
+            }
         };
     }
 }
