@@ -1140,23 +1140,34 @@ InstanceSetterCallback wrapInstanceSetter(Fn&& fn) {
     }
 }
 
-// TODO: ValueTraits support for member pointers
-//
-// prop("r", &Color::r) fails when the member is inherited (e.g. Color inherits
-// from floatN4<Color>). wrapInstanceAccessor deduces C from the binding class
-// (Color) but the member pointer's actual class is the base (floatN4), causing
-// type mismatch in unwrap<const C>.
-//
-// Fix: introduce ValueTraits<Member> analogous to FunctionTraits to extract
-// class_type and value_type from the member pointer itself, eliminating the
-// need for the caller to provide C. wrapInstanceAccessor should accept an
-// arbitrary member pointer and unwrap using the deduced class_type.
-//
-// Workaround for now: use lambda getter/setter instead of member pointers
-// for inherited members.
-template <typename C, bool forceReadonly, typename Ty>
+template <typename T>
+struct MemberPointerTraits;
+template <typename ClassType, typename ValueType>
+struct MemberPointerTraits<ValueType ClassType::*> {
+    using class_type              = ClassType;
+    using value_type              = ValueType;
+    static constexpr bool isConst = false;
+};
+template <typename ClassType, typename ValueType>
+struct MemberPointerTraits<const ValueType ClassType::*> {
+    using class_type              = ClassType;
+    using value_type              = ValueType;
+    static constexpr bool isConst = true;
+};
+
+
+template <typename C, bool forceReadonly, typename MemberPtr>
 std::pair<InstanceGetterCallback, InstanceSetterCallback>
-wrapInstanceAccessor(Ty C::* member, ReturnValuePolicy policy) {
+wrapInstanceAccessor(MemberPtr member, ReturnValuePolicy policy) {
+    using Traits     = MemberPointerTraits<std::remove_cvref_t<MemberPtr>>;
+    using value_type = typename Traits::value_type;
+    using class_type = typename Traits::class_type;
+
+    static_assert(
+        std::is_base_of_v<class_type, C> || std::is_same_v<class_type, C>,
+        "Member pointer does not belong to the bound class hierarchy"
+    );
+
     InstanceGetterCallback getter = [member,
                                      policy](InstancePayload& payload, Arguments const& arguments) -> Local<Value> {
         auto           inst  = payload.unwrap<const C>();
@@ -1168,11 +1179,10 @@ wrapInstanceAccessor(Ty C::* member, ReturnValuePolicy policy) {
         );
     };
     InstanceSetterCallback setter = nullptr;
-    if constexpr (!std::is_const_v<std::remove_cvref_t<Ty>> && !forceReadonly) {
+    if constexpr (!Traits::isConst && !forceReadonly) {
         setter = [member](InstancePayload& payload, Arguments const& arguments) {
-            auto inst        = payload.unwrap<C>();
-            using value_type = std::remove_cvref_t<Ty>;
-            inst->*member    = toCpp<value_type>(arguments[0]);
+            auto inst     = payload.unwrap<C>();
+            inst->*member = toCpp<value_type>(arguments[0]);
         };
     }
     return {std::move(getter), std::move(setter)};

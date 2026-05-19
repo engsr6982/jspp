@@ -75,4 +75,28 @@ TEST_CASE_METHOD(
 }
 
 
+struct Base {
+    int       foo;
+    int const bar = 42;
+    Base(int foo) : foo(foo) {}
+};
+struct Derived : public Base {
+    using Base::Base;
+};
+TEST_CASE_METHOD(
+    BugTestFixture,
+    "Bug: member pointer from derived class fails unwrap due to base class type mismatch",
+    "[bugs]"
+) {
+    static auto Test =
+        binding::defClass<Derived>("Derived").ctor<int>().prop("foo", &Derived::foo).prop("bar", &Base::bar).build();
+
+    EngineScope lock{*engine};
+    engine->registerClass(Test);
+
+    REQUIRE_NOTHROW(engine->evalScript(String::newString("new Derived(1).foo = 42")));
+    REQUIRE_THROWS(engine->evalScript(String::newString("new Derived(1).bar = 42")));
+}
+
+
 } // namespace
