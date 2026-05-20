@@ -51,6 +51,7 @@ struct ResolvedCastSource {
 };
 
 template <typename T>
+    requires(!std::is_void_v<T>)
 ResolvedCastSource resolveCastSource(T* value) {
     auto& engine = EngineScope::currentEngineChecked();
 
