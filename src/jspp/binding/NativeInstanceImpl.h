@@ -1,5 +1,4 @@
 #pragma once
-#include "jspp/core/Exception.h"
 #include "jspp/core/MetaInfo.h"
 #include "jspp/core/NativeInstance.h"
 #include "jspp/core/Trampoline.h"
@@ -8,7 +7,10 @@
 #include "traits/Polymorphic.h"
 #include "traits/TypeTraits.h"
 
+#include <concepts>
+#include <cstddef>
 #include <memory>
+#include <stdexcept>
 #include <type_traits>
 #include <typeindex>
 
@@ -16,26 +18,25 @@
 namespace jspp::binding {
 
 /**
- * @brief 具体类型的实例持有者
+ * Owns pointer ownership and manages the lifecycle of large objects (internally uses secondary heap allocation)
  *
- * @tparam T 实际的 C++ 类型 (e.g., MyClass)
- * @tparam Holder 实际的持有方式 (e.g., T*, std::unique_ptr<T>, std::shared_ptr<T>)
+ * @tparam The actual C++ type (e.g., MyClass)
+ * @tparam The actual way the Holder is held (e.g., T*, std::unique_ptr<T>, std::shared_ptr<T>)
  */
 template <typename T, typename Holder>
-class NativeInstanceImpl final : public NativeInstance {
+class PointerNativeInstance final : public NativeInstance {
 public:
     using ElementType = typename std::pointer_traits<Holder>::element_type;
 
     Holder value_;
     void*  most_derived_ptr_;
 
-    explicit NativeInstanceImpl(ClassMeta const* meta, Holder value, void* most_derived_ptr)
+    explicit PointerNativeInstance(ClassMeta const* meta, Holder value, void* most_derived_ptr)
     : NativeInstance(meta),
       value_(std::move(value)),
       most_derived_ptr_(most_derived_ptr) {}
 
-    ~NativeInstanceImpl() override = default;
-
+    ~PointerNativeInstance() override = default;
 
     std::type_index type_id() const override { return std::type_index(typeid(std::remove_cv_t<ElementType>)); }
 
@@ -67,22 +68,24 @@ public:
 
     void* release_ownership() override {
         if constexpr (traits::is_unique_ptr_v<Holder>) {
-            // 显式丢弃 const，由外层 TypeConverter 负责安全性校验
+            // Explicitly discard const, with the outer TypeConverter responsible for safety checks
             return const_cast<void*>(static_cast<const void*>(value_.release()));
         } else {
-            return nullptr; // shared_ptr 或 raw_ptr 不允许释放所有权
+            return nullptr; // shared_ptr or raw_ptr is not allowed to release ownership
         }
     }
 
     void* cast(std::type_index target_type) const override {
-        // 如果请求的类型恰好是智能指针持有的静态声明类型 (例如 Base2)
-        // 直接返回底层的裸指针，因为智能指针知道自己准确的 Base2 地址，无需计算
+        // If the requested type happens to be the statically declared type held by
+        // the smart pointer (for example, Base2). Directly return the underlying raw pointer,
+        // because the smart pointer knows its exact Base2 address and does not need to calculate it.
         if (target_type == std::type_index(typeid(std::remove_cv_t<ElementType>))) {
             return const_cast<void*>(static_cast<const void*>(get_raw_ptr()));
         }
 
-        // 如果请求的是多态真实类型 (Derived) 或其他基类 (Base1)
-        // 必须从多态首地址 (most_derived_ptr_) 出发，利用 Meta 链条进行安全的 C++ castTo 偏移
+        // If the request is for the polymorphic real type (Derived) or another base class (Base1)
+        // It is necessary to start from the polymorphic base address (most_derived_ptr_) and use
+        //  the Meta chain to safely perform C castTo offset
         if (meta_) {
             return meta_->castTo(most_derived_ptr_, target_type);
         }
@@ -98,16 +101,15 @@ public:
 
     std::unique_ptr<NativeInstance> clone() const override {
         if constexpr (std::is_copy_constructible_v<ElementType>) {
-            auto* raw = get_raw_ptr();
-            if (raw) {
-                return std::make_unique<NativeInstanceImpl<ElementType, std::unique_ptr<ElementType>>>(
+            if (auto* raw = get_raw_ptr()) {
+                return std::make_unique<PointerNativeInstance<ElementType, std::unique_ptr<ElementType>>>(
                     meta_,
                     std::make_unique<ElementType>(*raw),
                     most_derived_ptr_
                 );
             }
         }
-        throw Exception("Object is not copy constructible");
+        [[unlikely]] throw std::logic_error("Object is not copy constructible");
     }
 
     bool is_owned() const override { return traits::is_unique_ptr_v<Holder> || traits::is_shared_ptr_v<Holder>; }
@@ -123,14 +125,69 @@ private:
 };
 
 
+static constexpr size_t kInlineSizeThreshold = 64; // bytes
+
+template <typename T>
+constexpr bool isInlineOptimizable_v = !std::is_pointer_v<T> &&           //
+                                       !std::is_reference_v<T> &&         //
+                                       !std::is_polymorphic_v<T> &&       //
+                                       std::is_copy_constructible_v<T> && //
+                                       std::is_move_constructible_v<T> && //
+                                       std::is_destructible_v<T> &&       //
+                                       (sizeof(T) <= kInlineSizeThreshold);
+
+
+/**
+ * Small object optimization, inline allocation of heap memory,
+ * reducing the overhead of secondary heap memory allocation and memory fragmentation
+ */
+template <typename T>
+class ValueNativeInstance final : public NativeInstance {
+public:
+    static_assert(isInlineOptimizable_v<T>, "ValueNativeInstance only supports small copyable types");
+
+    T value_;
+
+    template <typename... Args>
+        requires std::constructible_from<T, Args...>
+    explicit ValueNativeInstance(ClassMeta const* meta, Args&&... args)
+    : NativeInstance(meta),
+      value_(std::forward<Args>(args)...) {}
+
+    explicit ValueNativeInstance(ClassMeta const* meta, T&& mv) : NativeInstance(meta), value_(std::move(mv)) {}
+
+    ~ValueNativeInstance() override = default;
+
+    std::type_index type_id() const override { return std::type_index(typeid(std::remove_cv_t<T>)); }
+    bool            is_expired() const override { return false; }
+    void            invalidate() override { /* Value types cannot expire prematurely */ }
+    bool            is_const() const override { return std::is_const_v<T>; }
+    bool            is_owned() const override { return true; }
+
+    void* cast(std::type_index target_type) const override {
+        // Not polymorphic, it can only ever be a cast to itself
+        if (target_type == std::type_index(typeid(std::remove_cv_t<T>))) {
+            return const_cast<void*>(static_cast<const void*>(&value_));
+        }
+        return nullptr;
+    }
+
+    void* release_ownership() override {
+        // Value types are not allowed to release control, otherwise memory will be dangling
+        return nullptr;
+    }
+
+    std::unique_ptr<NativeInstance> clone() const override {
+        return std::make_unique<ValueNativeInstance<T>>(meta_, value_);
+    }
+};
+
 namespace traits::detail {
-// 专门用于提取 裸指针、值、以及智能指针的底层元素类型
+
 template <typename U>
 struct ElementTypeExtractor {
-    // 去掉引用: const T& -> const T
-    using NoRef = std::remove_reference_t<U>;
-    // 去掉指针: const T* -> const T
-    using type = std::remove_pointer_t<NoRef>;
+    using NoRef = std::remove_reference_t<U>;   // const T& -> const T
+    using type  = std::remove_pointer_t<NoRef>; // const T* -> const T
 };
 
 template <typename U>
@@ -138,13 +195,15 @@ template <typename U>
 struct ElementTypeExtractor<U> {
     using type = typename std::remove_reference_t<U>::element_type;
 };
+
 } // namespace traits::detail
 
 namespace factory {
 
 
 /**
- * @brief 根据给定的 C++ 值、策略和决议后的类型，生成底层的 NativeInstance 实例
+ * @brief Generate the underlying NativeInstance instance based on the given
+ *        C++ value, strategy, and the type after resolution
  */
 template <typename T>
 std::unique_ptr<NativeInstance>
@@ -152,10 +211,10 @@ createNativeInstance(T&& value, ReturnValuePolicy policy, traits::detail::Resolv
     using BaseT       = std::remove_reference_t<T>;
     using ElementType = typename traits::detail::ElementTypeExtractor<T>::type;
 
-    // 辅助创建器，自动推导 Holder 类型
+    // Helper creator, automatically deduces Holder type
     auto createImpl = [&](auto&& holder) {
         using HolderT = std::decay_t<decltype(holder)>;
-        return std::make_unique<NativeInstanceImpl<ElementType, HolderT>>(
+        return std::make_unique<PointerNativeInstance<ElementType, HolderT>>(
             resolved.meta,
             std::forward<decltype(holder)>(holder),
             const_cast<void*>(resolved.ptr)
@@ -166,17 +225,16 @@ createNativeInstance(T&& value, ReturnValuePolicy policy, traits::detail::Resolv
     // smart pointer
     // ----------------
     if constexpr (traits::is_unique_ptr_v<BaseT>) {
-        if (policy == ReturnValuePolicy::kCopy) {
-            throw Exception("Cannot copy unique_ptr");
+        if (policy == ReturnValuePolicy::kCopy) [[unlikely]] {
+            throw std::logic_error("Cannot copy unique_ptr");
         }
         return createImpl(std::forward<T>(value));
+
     } else if constexpr (traits::is_shared_ptr_v<BaseT>) {
         return createImpl(std::forward<T>(value));
-    } else { // use else statement to fix C2440
-        // ----------------
-        // raw pointer
-        // ----------------
-        // 提取裸指针用于构建 Holder
+
+    } else { // raw pointer
+        // Extract raw pointers for constructing Holder
         ElementType* rawPtr = nullptr;
         if constexpr (std::is_pointer_v<BaseT>) {
             rawPtr = value;
@@ -185,58 +243,61 @@ createNativeInstance(T&& value, ReturnValuePolicy policy, traits::detail::Resolv
             rawPtr = &value;
         }
 
-        // 根据策略处理对象的所有权和生命周期
+        // Handle the ownership and lifecycle of objects according to the strategy
         switch (policy) {
         case ReturnValuePolicy::kCopy:
             if (resolved.is_downcasted) {
                 auto copy = resolved.meta->instanceMeta_.copyCloneCtor_;
-                if (!copy) {
-                    throw Exception("Polymorphic type '" + resolved.meta->name_ + "' is not copy constructible");
+                if (!copy) [[unlikely]] {
+                    throw std::logic_error("Polymorphic type '" + resolved.meta->name_ + "' is not copy constructible");
                 }
                 void* cloned = copy(resolved.ptr);
-
-                // 将 Derived* 偏移回 Base* (ElementType*)
+                // Offset Derived* back to Base* (ElementType*)
                 void* base = resolved.meta->castTo(cloned, typeid(ElementType));
-                if (!base) {
-                    throw Exception("Failed to upcast cloned polymorphic object to base type");
+                if (!base) [[unlikely]] {
+                    throw std::logic_error("Failed to upcast cloned polymorphic object to base type");
                 }
                 ElementType* finalPtr = static_cast<ElementType*>(base);
                 return createImpl(std::unique_ptr<ElementType>(finalPtr));
             }
-            // 非多态，普通拷贝
-            if constexpr (std::is_copy_constructible_v<ElementType>) {
+            // Non-polymorphic type
+            if constexpr (isInlineOptimizable_v<ElementType>) {
+                return std::make_unique<ValueNativeInstance<ElementType>>(resolved.meta, *rawPtr); // SOO
+            } else if constexpr (std::is_copy_constructible_v<ElementType>) {
                 return createImpl(std::make_unique<ElementType>(*rawPtr));
             } else {
-                throw Exception("Object is not copy constructible");
+                [[unlikely]] throw std::logic_error("Object is not copy constructible");
             }
 
         case ReturnValuePolicy::kMove:
             if (resolved.is_downcasted) {
-                auto copy = resolved.meta->instanceMeta_.moveCloneCtor_;
-                if (!copy) {
-                    throw Exception("Polymorphic type '" + resolved.meta->name_ + "' is not move constructible");
+                auto move = resolved.meta->instanceMeta_.moveCloneCtor_;
+                if (!move) [[unlikely]] {
+                    throw std::logic_error("Polymorphic type '" + resolved.meta->name_ + "' is not move constructible");
                 }
-                void* cloned = copy(const_cast<void*>(resolved.ptr));
-                // 将 Derived* 偏移回 Base* (ElementType*)
+                void* cloned = move(const_cast<void*>(resolved.ptr));
+                // Offset Derived* back to Base* (ElementType*)
                 void* base = resolved.meta->castTo(cloned, typeid(ElementType));
-                if (!base) {
-                    throw Exception("Failed to upcast cloned polymorphic object to base type");
+                if (!base) [[unlikely]] {
+                    throw std::logic_error("Failed to upcast cloned polymorphic object to base type");
                 }
                 ElementType* finalPtr = static_cast<ElementType*>(base);
                 return createImpl(std::unique_ptr<ElementType>(finalPtr));
             }
-
-            if constexpr (std::is_move_constructible_v<ElementType>) {
+            // Non-polymorphic type
+            if constexpr (isInlineOptimizable_v<ElementType>) {
+                return std::make_unique<ValueNativeInstance<ElementType>>(resolved.meta, std::move(*rawPtr)); // SOO
+            } else if constexpr (std::is_move_constructible_v<ElementType>) {
                 return createImpl(std::make_unique<ElementType>(std::move(*rawPtr)));
             } else {
-                throw Exception("Object is not move constructible");
+                [[unlikely]] throw std::logic_error("Object is not move constructible");
             }
 
         case ReturnValuePolicy::kTakeOwnership:
             if constexpr (std::is_pointer_v<BaseT>) {
                 return createImpl(std::unique_ptr<ElementType>(value));
             } else {
-                throw Exception("Cannot take ownership of non-pointer");
+                [[unlikely]] throw std::logic_error("Cannot take ownership of non-pointer");
             }
 
         case ReturnValuePolicy::kReference:
@@ -253,7 +314,7 @@ createNativeInstance(T&& value, ReturnValuePolicy policy, traits::detail::Resolv
         }
 
         default:
-            [[unlikely]] throw Exception("Unknown return value policy");
+            [[unlikely]] throw std::logic_error("Unknown return value policy");
         }
     }
 }
@@ -269,8 +330,15 @@ template <typename T, typename... Args>
 std::unique_ptr<NativeInstance> newNativeInstance(Args&&... args)
     requires std::constructible_from<T, Args...>
 {
-    auto inst = std::make_unique<T>(std::forward<Args>(args)...);
-    return wrapNativeInstance(std::move(inst));
+    if constexpr (isInlineOptimizable_v<T>) {
+        // SOO Optimization
+        T*   unused  = nullptr;
+        auto resolve = traits::detail::resolveCastSource<T>(unused);
+        return std::make_unique<ValueNativeInstance<T>>(resolve.meta, std::forward<Args>(args)...);
+    } else {
+        auto inst = std::make_unique<T>(std::forward<Args>(args)...);
+        return wrapNativeInstance(std::move(inst));
+    }
 }
 
 
