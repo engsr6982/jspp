@@ -165,9 +165,14 @@ public:
     bool            is_owned() const override { return true; }
 
     void* cast(std::type_index target_type) const override {
-        // Not polymorphic, it can only ever be a cast to itself
+        void* self_ptr = const_cast<void*>(static_cast<const void*>(&value_));
+
         if (target_type == std::type_index(typeid(std::remove_cv_t<T>))) {
-            return const_cast<void*>(static_cast<const void*>(&value_));
+            return self_ptr;
+        }
+
+        if (meta_) {
+            return meta_->castTo(self_ptr, target_type);
         }
         return nullptr;
     }
