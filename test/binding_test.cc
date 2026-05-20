@@ -69,7 +69,20 @@ struct BindingTestFixture {
     {                                                                                                                  \
         ScriptEvalAssertContext::CurrentRunningLine    = __LINE__;                                                     \
         ScriptEvalAssertContext::CurrentScriptEvalCode = MOUNT_FUNC_NAME "(" COND ", `" MSG "`)";                      \
-        engine->evalScript(String::newString(ScriptEvalAssertContext::CurrentScriptEvalCode));                         \
+        try {                                                                                                          \
+            engine->evalScript(String::newString(ScriptEvalAssertContext::CurrentScriptEvalCode));                     \
+        } catch (...) {                                                                                                \
+            ScriptEvalAssertContext::handler.emplace(                                                                  \
+                "REQUIRE"_catch_sr,                                                                                    \
+                Catch::SourceLineInfo(__FILE__, ScriptEvalAssertContext::CurrentRunningLine),                          \
+                Catch::StringRef(                                                                                      \
+                    ScriptEvalAssertContext::CurrentScriptEvalCode.data(),                                             \
+                    ScriptEvalAssertContext::CurrentScriptEvalCode.size()                                              \
+                ),                                                                                                     \
+                Catch::ResultDisposition::Normal                                                                       \
+            );                                                                                                         \
+            ScriptEvalAssertContext::handler->handleUnexpectedInflightException();                                     \
+        }                                                                                                              \
         ScriptEvalAssertContext::handler->complete();                                                                  \
         ScriptEvalAssertContext::handler.reset();                                                                      \
     }
