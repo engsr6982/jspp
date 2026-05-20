@@ -260,6 +260,9 @@ createNativeInstance(T&& value, ReturnValuePolicy policy, traits::detail::Resolv
                 // Offset Derived* back to Base* (ElementType*)
                 void* base = resolved.meta->castTo(cloned, typeid(ElementType));
                 if (!base) [[unlikely]] {
+                    if (auto dtor = resolved.meta->instanceMeta_.cloneDestructor_) {
+                        dtor(cloned); // free the cloned object
+                    }
                     throw std::logic_error("Failed to upcast cloned polymorphic object to base type");
                 }
                 ElementType* finalPtr = static_cast<ElementType*>(base);
@@ -284,6 +287,9 @@ createNativeInstance(T&& value, ReturnValuePolicy policy, traits::detail::Resolv
                 // Offset Derived* back to Base* (ElementType*)
                 void* base = resolved.meta->castTo(cloned, typeid(ElementType));
                 if (!base) [[unlikely]] {
+                    if (auto dtor = resolved.meta->instanceMeta_.cloneDestructor_) {
+                        dtor(cloned); // free the cloned object
+                    }
                     throw std::logic_error("Failed to upcast cloned polymorphic object to base type");
                 }
                 ElementType* finalPtr = static_cast<ElementType*>(base);

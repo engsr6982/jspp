@@ -69,20 +69,29 @@ struct InstanceMemberMeta {
     CopyCloneCtor const copyCloneCtor_{nullptr};
     MoveCloneCtor const moveCloneCtor_{nullptr};
 
+    // After copying or moving cloned resources, if subsequent operations fail,
+    //  the cloned pointer needs to be released to avoid memory leaks.
+    // For example: polymorphic casting fails when `createNativeInstance`
+    //  internally handles Copy and Move strategies
+    using CloneDestructor = void (*)(void* ptr);
+    CloneDestructor const cloneDestructor_{nullptr};
+
     explicit InstanceMemberMeta(
         ConstructorCallback   constructor,
         std::vector<Property> property,
         std::vector<Method>   functions,
         size_t                classSize,
-        CopyCloneCtor         copyCloneCtor = nullptr,
-        MoveCloneCtor         moveCloneCtor = nullptr
+        CopyCloneCtor         copyCloneCtor   = nullptr,
+        MoveCloneCtor         moveCloneCtor   = nullptr,
+        CloneDestructor       cloneDestructor = nullptr
     )
     : constructor_(std::move(constructor)),
       property_(std::move(property)),
       methods_(std::move(functions)),
       classSize_(classSize),
       copyCloneCtor_(copyCloneCtor),
-      moveCloneCtor_(moveCloneCtor) {}
+      moveCloneCtor_(moveCloneCtor),
+      cloneDestructor_(cloneDestructor) {}
 };
 
 struct ClassMeta {

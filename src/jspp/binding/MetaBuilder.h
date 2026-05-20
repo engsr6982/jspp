@@ -347,8 +347,9 @@ public:
             }
         }
 
-        InstanceMemberMeta::CopyCloneCtor copyCloneCtor = nullptr;
-        InstanceMemberMeta::MoveCloneCtor moveCloneCtor = nullptr;
+        InstanceMemberMeta::CopyCloneCtor   copyCloneCtor   = nullptr;
+        InstanceMemberMeta::MoveCloneCtor   moveCloneCtor   = nullptr;
+        InstanceMemberMeta::CloneDestructor cloneDestructor = nullptr;
         if constexpr (isInstanceClass) {
             if constexpr (std::is_copy_constructible_v<T>) {
                 copyCloneCtor = [](const void* src) -> void* {
@@ -358,6 +359,9 @@ public:
             }
             if constexpr (std::is_move_constructible_v<T>) {
                 moveCloneCtor = [](void* src) -> void* { return new T(std::move(*static_cast<T*>(src))); };
+            }
+            if constexpr (std::is_destructible_v<T>) {
+                cloneDestructor = [](void* cloned) { delete static_cast<T*>(cloned); };
             }
         }
 
@@ -369,7 +373,8 @@ public:
                              std::move(instanceProperty_),
                              std::move(instanceFunctions_),
                              traits::size_of_v<T>,
-                             copyCloneCtor, moveCloneCtor
+                             copyCloneCtor, moveCloneCtor,
+                             cloneDestructor
             },
             base_,
             std::type_index{typeid(T)},
