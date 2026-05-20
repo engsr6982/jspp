@@ -86,21 +86,4 @@ inline constexpr bool is_weak_ptr_v = is_weak_ptr<std::remove_cvref_t<T>>::value
 template <typename T>
 inline constexpr bool is_std_smart_pointer = is_unique_ptr_v<T> || is_shared_ptr_v<T> || is_weak_ptr_v<T>;
 
-template <typename T>
-struct pointee;
-
-template <typename T, typename D>
-struct pointee<std::unique_ptr<T, D>> {
-    using type = T;
-};
-
-template <typename T>
-struct pointee<std::shared_ptr<T>> {
-    using type = T;
-};
-
-template <typename T>
-using pointee_t = typename pointee<std::remove_cvref_t<T>>::type;
-
-
 } // namespace jspp::binding::traits
