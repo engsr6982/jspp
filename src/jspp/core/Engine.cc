@@ -68,6 +68,33 @@ Local<Value> Engine::loadFile(std::filesystem::path const& path) {
     return evalModule(String::newString(code), String::newString(path.string()));
 }
 
+Local<Object> Engine::loadModule(std::filesystem::path const& path) {
+    if (isDestroying()) {
+        throw Exception("engine is destroying");
+    }
+    if (!std::filesystem::exists(path)) {
+        throw Exception("File not found: " + path.string());
+    }
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs.is_open()) {
+        throw Exception("Failed to open file: " + path.string());
+    }
+    std::string code((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+
+    // Use a file:// URL as the module name: it is the module cache key, the base
+    // for resolving relative imports, and the value of import.meta.url.
+    std::error_code err;
+    auto            full = std::filesystem::weakly_canonical(path, err);
+    if (err) {
+        full = std::filesystem::absolute(path, err);
+    }
+    auto url = full.generic_string();
+    if (!url.starts_with('/')) {
+        url.insert(url.begin(), '/');
+    }
+    return evalModuleNamespace(String::newString(code), String::newString("file://" + url));
+}
+
 Local<Value> Engine::registerClass(ClassMeta const& meta) {
     auto ctor = performRegisterClass(meta);
     namespace_utils::mountNamespace(globalThis(), meta.name_, ctor);

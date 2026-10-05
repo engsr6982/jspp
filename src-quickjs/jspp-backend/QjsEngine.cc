@@ -223,6 +223,26 @@ void QjsEngine::pumpPendingJobs() {
 JobQueue* QjsEngine::getJobQueue() const { return queue_.get(); }
 
 Local<Value> QjsEngine::loadByteCode(std::filesystem::path const& path, bool main) {
+    auto result = performLoadByteCode(path, main, nullptr);
+    return ValueHelper::wrap<Value>(result);
+}
+
+Local<Object> QjsEngine::loadByteCodeNamespace(std::filesystem::path const& path, bool main) {
+    JSModuleDef* module = nullptr;
+    auto         result = performLoadByteCode(path, main, &module);
+    if (!module) {
+        JS_FreeValue(context_, result);
+        throw Exception("bytecode is not a module: " + path.string());
+    }
+
+    // The namespace object holds the live bindings of the module exports
+    auto ns = JS_GetModuleNamespace(context_, module);
+    JS_FreeValue(context_, result);
+    QjsHelper::rethrowException(ns);
+    return ValueHelper::wrap<Object>(ns);
+}
+
+JSValue QjsEngine::performLoadByteCode(std::filesystem::path const& path, bool main, JSModuleDef** outModule) {
     std::ifstream ifs{path, std::ios::binary};
     if (!ifs) {
         throw std::runtime_error("Failed to open binary file: " + path.string());
@@ -250,8 +270,12 @@ Local<Value> QjsEngine::loadByteCode(std::filesystem::path const& path, bool mai
             JS_FreeValue(context_, obj);
             QjsHelper::rethrowException(-1, "Failed to set import meta");
         }
+        if (outModule) {
+            *outModule = module;
+        }
     }
 
+    // A module evaluates to a promise, the module definition stays alive in the context
     obj = JS_EvalFunction(context_, obj);
     QjsHelper::rethrowException(obj);
 
@@ -263,9 +287,13 @@ Local<Value> QjsEngine::loadByteCode(std::filesystem::path const& path, bool mai
         JS_Throw(context_, msg);                      // Throw a pending exception
         qjs_backend::QjsHelper::rethrowException(-1); // Handle pending exception
     }
+    if (outModule && state == JSPromiseStateEnum::JS_PROMISE_PENDING) {
+        JS_FreeValue(context_, obj);
+        throw Exception("module is not settled, top-level await is not supported");
+    }
 
     pumpPendingJobs();
-    return ValueHelper::wrap<Value>(obj);
+    return obj;
 }
 
 bool QjsModuleLoader::setImportMeta(
@@ -818,6 +846,58 @@ Local<Value> Engine::evalModule(Local<String> const& code, Local<String> const& 
 
     pumpPendingJobs();
     return ValueHelper::wrap<Value>(result);
+}
+Local<Object> Engine::evalModuleNamespace(Local<String> const& code, Local<String> const& source) {
+    if (hasFlag(flags_, qjs_backend::QjsInitializeFlags::NoModuleLoader)) {
+        throw std::logic_error("evalModuleNamespace is not supported in AddonMode or NoModuleLoader");
+    }
+    auto stdCode   = code.getValue();
+    auto stdSource = source.getValue();
+
+    // Compile only: returns a JS_TAG_MODULE value instead of evaluating it, so that
+    // the module definition stays reachable after evaluation.
+    auto modValue = JS_Eval(
+        context_,
+        stdCode.data(),
+        stdCode.size(),
+        stdSource.data(),
+        JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY
+    );
+    qjs_backend::QjsHelper::rethrowException(modValue);
+
+    // Resolve dependencies (loaded by the QjsModuleLoader installed by jspp)
+    if (JS_ResolveModule(context_, modValue) < 0) {
+        JS_FreeValue(context_, modValue);
+        qjs_backend::QjsHelper::rethrowException(-1, "failed to resolve module: " + stdSource);
+    }
+    auto* module = static_cast<JSModuleDef*>(JS_VALUE_GET_PTR(modValue));
+    if (!qjs_backend::QjsModuleLoader::setImportMeta(context_, module, stdSource)) {
+        JS_FreeValue(context_, modValue);
+        qjs_backend::QjsHelper::rethrowException(-1, "failed to set import.meta: " + stdSource);
+    }
+
+    // Evaluate: JS_EvalFunction takes over modValue, a module evaluates to a promise
+    auto promise = JS_EvalFunction(context_, modValue);
+    qjs_backend::QjsHelper::rethrowException(promise);
+
+    JSPromiseStateEnum state = JS_PromiseState(context_, promise);
+    if (state != JSPromiseStateEnum::JS_PROMISE_FULFILLED) {
+        JSValue reason = JS_PromiseResult(context_, promise);
+        JS_FreeValue(context_, promise);
+        if (state == JSPromiseStateEnum::JS_PROMISE_PENDING) {
+            JS_FreeValue(context_, reason);
+            throw Exception("module is not settled, top-level await is not supported");
+        }
+        JS_Throw(context_, reason);                   // Throw a pending exception (keeps the JS stack)
+        qjs_backend::QjsHelper::rethrowException(-1); // Handle pending exception
+    }
+    JS_FreeValue(context_, promise);
+    pumpPendingJobs();
+
+    // The namespace object holds the live bindings of the module exports
+    auto ns = JS_GetModuleNamespace(context_, module);
+    qjs_backend::QjsHelper::rethrowException(ns);
+    return ValueHelper::wrap<Object>(ns);
 }
 
 

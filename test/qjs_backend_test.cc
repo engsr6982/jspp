@@ -19,6 +19,7 @@
 #include "catch2/matchers/catch_matchers_exception.hpp"
 #include "catch2/matchers/catch_matchers_string.hpp"
 
+#include <fstream>
 #include <iostream>
 
 
@@ -277,6 +278,59 @@ TEST_CASE_METHOD(QjsTestFixture, "Test QjsEngie::loadByteCode") {
 
     REQUIRE_NOTHROW(engine->loadByteCode(byteCodeFilePath));
     REQUIRE(done == true);
+}
+
+TEST_CASE_METHOD(QjsTestFixture, "Test QjsEngie::loadByteCodeNamespace") {
+    using namespace jspp;
+    namespace fs = std::filesystem;
+
+    EngineScope lock{engine.get()};
+
+    // Bytecode is version-locked to the QuickJS build, so the fixture is produced by the
+    // engine under test instead of being committed as a binary file.
+    auto ctx = engine->context();
+
+    static constexpr std::string_view moduleSource = R"(
+        export default class ByteCodeMod {
+            constructor() { this.name = 'bytecode'; }
+            ping() { return 'pong'; }
+        }
+        export const VERSION = 7;
+    )";
+
+    auto modValue = JS_Eval(
+        ctx,
+        moduleSource.data(),
+        moduleSource.size(),
+        "qjs_bytecode_module.js",
+        JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY
+    );
+    REQUIRE_FALSE(JS_IsException(modValue));
+
+    size_t   size = 0;
+    uint8_t* data = JS_WriteObject(ctx, &size, modValue, JS_WRITE_OBJ_BYTECODE);
+    JS_FreeValue(ctx, modValue);
+    REQUIRE(data != nullptr);
+
+    auto byteCodeFilePath = fs::temp_directory_path() / "jspp_bytecode_module.bin";
+    {
+        std::ofstream out(byteCodeFilePath, std::ios::binary);
+        REQUIRE(out.is_open());
+        out.write(reinterpret_cast<char const*>(data), static_cast<std::streamsize>(size));
+    }
+    js_free(ctx, data);
+
+    // The returned object is the module namespace, the default export is the class
+    auto ns = engine->loadByteCodeNamespace(byteCodeFilePath);
+    REQUIRE(ns.get(String::newString("VERSION")).asNumber().getInt32() == 7);
+
+    auto ctor = ns.get(String::newString("default"));
+    REQUIRE(ctor.isFunction());
+
+    auto inst = ctor.asFunction().callAsConstructor();
+    REQUIRE(inst.isObject());
+    REQUIRE(inst.asObject().get(String::newString("name")).asString().getValue() == "bytecode");
+    REQUIRE(inst.asObject().get(String::newString("ping")).asFunction().call(inst).asString().getValue() == "pong");
 }
 
 

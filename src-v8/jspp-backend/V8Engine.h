@@ -81,6 +81,15 @@ protected:
     static void ensureInitializeFlags(V8InitializeFlags flags);
     void        initContext();
 
+    /**
+     * Compile, cache, instantiate and evaluate an ES module.
+     * @param outResult Receives the evaluation result (a promise for modules).
+     * @return The evaluated module, its namespace is available via Module::GetModuleNamespace().
+     * @note Throws jspp::Exception on any failure, including a rejected evaluation promise.
+     */
+    v8::Local<v8::Module>
+    performEvalModule(v8::Local<v8::String> code, v8::Local<v8::String> source, v8::Local<v8::Value>& outResult);
+
     void setToStringTag(v8::Local<v8::FunctionTemplate>& obj, std::string_view name, bool hasConstructor);
     void setToStringTag(v8::Local<v8::Object>& obj, std::string_view name);
 

@@ -535,4 +535,60 @@ TEST_CASE("Module: Cyclic Import", "[module]") {
     }
 }
 
+TEST_CASE("Module: loadModule / evalModuleNamespace returns the module namespace", "[module]") {
+    auto        engine = createModuleEngine();
+    EngineScope scope{engine.get()};
+
+    ScopedTempDir dir("jspp_test_load_module");
+    dir.writeFile("dep.js", R"(
+        export const NAME = 'dep';
+    )");
+    dir.writeFile("index.js", R"(
+        import { NAME } from './dep.js';
+
+        export default class ScriptMod {
+            constructor() { this.name = NAME; }
+            onLoad() { return 'loaded:' + this.name; }
+        }
+        export const VERSION = 2;
+    )");
+
+    // The returned object is the module namespace: named exports are readable,
+    // the default export is the class itself
+    auto ns = engine->loadModule(dir.dir / "index.js");
+    REQUIRE(ns.get(String::newString("VERSION")).asNumber().getInt32() == 2);
+
+    auto ctor = ns.get(String::newString("default"));
+    REQUIRE(ctor.isFunction());
+    REQUIRE(ctor.asFunction().isConstructor());
+
+    // The namespace holds live bindings, so the class can be instantiated from C++
+    auto inst = ctor.asFunction().callAsConstructor();
+    REQUIRE(inst.isObject());
+    REQUIRE(inst.asObject().get(String::newString("name")).asString().getValue() == "dep");
+    REQUIRE(
+        inst.asObject().get(String::newString("onLoad")).asFunction().call(inst).asString().getValue()
+        == "loaded:dep"
+    );
+
+    // String form: relative imports are resolved against the given source
+    auto ns2 = engine->evalModuleNamespace(
+        String::newString("import { NAME } from './dep.js'; export default 'ns:' + NAME;"),
+        String::newString(dir.getFileUrl("entry.js"))
+    );
+    REQUIRE(ns2.get(String::newString("default")).asString().getValue() == "ns:dep");
+
+    // A module which is not settled synchronously cannot be returned as a namespace
+    REQUIRE_THROWS_AS(
+        engine->evalModuleNamespace(
+            String::newString("await new Promise(() => {}); export default 1;"),
+            String::newString("<tla>")
+        ),
+        jspp::Exception
+    );
+
+    // Missing file
+    REQUIRE_THROWS_AS(engine->loadModule(dir.dir / "not_exists.js"), jspp::Exception);
+}
+
 } // namespace ut

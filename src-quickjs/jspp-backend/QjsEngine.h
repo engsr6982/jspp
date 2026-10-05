@@ -105,11 +105,25 @@ public:
 
     Local<Value> loadByteCode(std::filesystem::path const& path, bool main = false);
 
+    /**
+     * Load a bytecode module and return its module namespace object
+     * (the same object as `import * as ns from ...` in JS).
+     * @note Throws if the module does not finish evaluating synchronously (e.g. top-level await).
+     * @note Throws if the bytecode is not a module (e.g. script bytecode).
+     */
+    Local<Object> loadByteCodeNamespace(std::filesystem::path const& path, bool main = false);
+
 protected:
     [[nodiscard]] Engine*       asEngine();
     [[nodiscard]] Engine const* asEngine() const;
 
     void initContext();
+
+    /**
+     * Read and evaluate bytecode, returning the evaluation result (a promise for modules).
+     * @param outModule When non-null, receives the module definition (nullptr for script bytecode).
+     */
+    JSValue performLoadByteCode(std::filesystem::path const& path, bool main, JSModuleDef** outModule);
 
     void setToStringTag(Local<Object>& obj, std::string_view name);
 

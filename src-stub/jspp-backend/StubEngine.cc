@@ -56,6 +56,12 @@ Local<Value> Engine::evalModule(Local<String> const& code, Local<String> const& 
     // Compile the module and execute it. Then check the promise status, and if it is rejected, throw an Exception.
     return {};
 }
+Local<Object> Engine::evalModuleNamespace(Local<String> const& code, Local<String> const& source) {
+    // TODO: please implement this
+    // Compile the module and execute it, then return its module namespace object.
+    // Throw an Exception if the module is not settled (top-level await is not supported).
+    throw Exception("Not implemented");
+}
 
 void Engine::gc() {
     // TODO: please implement this

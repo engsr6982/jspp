@@ -9,6 +9,7 @@
 #include <v8-exception.h>
 
 #include <format>
+#include <string_view>
 
 namespace jspp::v8_backend {
 
@@ -25,6 +26,13 @@ void V8Helper::rethrowException(v8::TryCatch const& tryCatch) {
     if (tryCatch.HasCaught()) {
         throw Exception(ValueHelper::wrap<Value>(tryCatch.Exception()));
     }
+}
+
+void V8Helper::rethrowException(v8::TryCatch const& tryCatch, std::string_view message) {
+    if (tryCatch.HasCaught()) {
+        throw Exception(ValueHelper::wrap<Value>(tryCatch.Exception()));
+    }
+    throw Exception(std::string{message});
 }
 
 void V8Helper::rethrowToScript(Exception const& exception) {

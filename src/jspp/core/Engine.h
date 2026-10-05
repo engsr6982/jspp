@@ -41,16 +41,43 @@ public:
 
     Local<Value> evalScript(Local<String> const& code);
 
-    /** @note This interface is not available in the Addon scenario or under NoModuleLoader.*/
+    /**
+     * Evaluate an ES module.
+     * @return The evaluation result. A module evaluates to a promise which resolves to its
+     *         module namespace, so this is NOT the namespace object; use evalModuleNamespace()
+     *         when the namespace is needed.
+     * @note This interface is not available in the Addon scenario or under NoModuleLoader.
+     */
     Local<Value> evalModule(Local<String> const& code);
 
-    /** @note This interface is not available in the Addon scenario or under NoModuleLoader.*/
+    /**
+     * Load an ES module from a file and evaluate it.
+     * @return The evaluation result. A module evaluates to a promise which resolves to its
+     *         module namespace, so this is NOT the namespace object; use loadModule() when
+     *         the namespace is needed.
+     * @note This interface is not available in the Addon scenario or under NoModuleLoader.
+     */
     Local<Value> loadFile(std::filesystem::path const& path);
+
+    /**
+     * Load an ES module and return its module namespace object
+     * (the same object as `import * as ns from ...` in JS).
+     * @note Throws if the module does not finish evaluating synchronously (e.g. top-level await).
+     * @note This interface is not available in the Addon scenario or under NoModuleLoader.
+     */
+    Local<Object> loadModule(std::filesystem::path const& path);
 
     Local<Value> evalScript(Local<String> const& code, Local<String> const& source);
 
     /** @note This interface is not available in the Addon scenario or under NoModuleLoader.*/
     Local<Value> evalModule(Local<String> const& code, Local<String> const& source);
+
+    /**
+     * Evaluate an ES module and return its module namespace object.
+     * @note Throws if the module does not finish evaluating synchronously (e.g. top-level await).
+     * @note This interface is not available in the Addon scenario or under NoModuleLoader.
+     */
+    Local<Object> evalModuleNamespace(Local<String> const& code, Local<String> const& source);
 
     void gc();
 

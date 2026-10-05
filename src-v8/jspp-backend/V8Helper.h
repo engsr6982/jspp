@@ -9,6 +9,7 @@ JSPP_WARNING_GUARD_BEGIN
 #include "v8-exception.h"
 JSPP_WARNING_GUARD_END
 
+#include <string_view>
 #include <tuple>
 
 namespace jspp::v8_backend {
@@ -26,6 +27,13 @@ struct V8Helper {
      * Re-throw the exception in v8::TryCatch as a Exception
      */
     static void rethrowException(v8::TryCatch const& tryCatch);
+
+    /**
+     * Re-throw the exception in v8::TryCatch as a Exception, or throw an Exception with
+     * the given message if nothing was caught.
+     * @note Always throws, so callers need no fallback return.
+     */
+    [[noreturn]] static void rethrowException(v8::TryCatch const& tryCatch, std::string_view message);
 
     static void rethrowToScript(Exception const& exception);
     static void rethrowToScript(std::exception const& exception);

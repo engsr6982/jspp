@@ -701,24 +701,16 @@ Local<Value> Engine::evalScript(Local<String> const& code, Local<String> const& 
     v8_backend::V8Helper::rethrowException(try_catch);
     return ValueHelper::wrap<Value>(result.ToLocalChecked());
 }
-Local<Value> Engine::evalModule(Local<String> const& code, Local<String> const& source) {
-    if (hasFlag(flags_, v8_backend::V8InitializeFlags::NoModuleLoader)) {
-        throw std::logic_error("evalModule/registerModule is not supported in AddonMode or NoModuleLoader");
-    }
-    auto         isolate = isolate_;
-    v8::TryCatch try_catch(isolate);
-    auto         ctx = context_.Get(isolate);
-
-    auto v8Code   = ValueHelper::unwrap(code);
-    auto v8Source = ValueHelper::unwrap(source);
-
+namespace {
+/// Convert an absolute path to a URL following the V8 ModuleLoader conventions.
+/// Returns the normalized source string, and updates the source handle in place when needed.
+std::string normalizeModuleSource(v8::Isolate* isolate, v8::Local<v8::String>& source) {
     std::string sourceStr;
     {
-        v8::String::Utf8Value utf8(isolate, v8Source);
+        v8::String::Utf8Value utf8(isolate, source);
         sourceStr = std::string(*utf8, utf8.length());
     }
 
-    // Convert an absolute path to a URL following the V8 ModuleLoader conventions
     if (sourceStr != "<eval>" && !sourceStr.starts_with("file://")
         && (sourceStr.find(":/") != std::string::npos || sourceStr.starts_with("/"))) {
         std::filesystem::path p = sourceStr;
@@ -729,17 +721,54 @@ Local<Value> Engine::evalModule(Local<String> const& code, Local<String> const& 
             sourceStr            = "file://";
             if (!gen_path.starts_with("/")) sourceStr += "/";
             sourceStr += gen_path;
-            v8Source   = v8::String::NewFromUtf8(isolate, sourceStr.c_str()).ToLocalChecked();
+            source      = v8::String::NewFromUtf8(isolate, sourceStr.c_str()).ToLocalChecked();
         }
     }
+    return sourceStr;
+}
+} // namespace
 
-    v8::ScriptOrigin           origin(v8Source, 0, 0, false, -1, v8::Local<v8::Value>(), false, false, true);
-    v8::ScriptCompiler::Source compilerSource(v8Code, origin);
+Local<Value> Engine::evalModule(Local<String> const& code, Local<String> const& source) {
+    if (hasFlag(flags_, v8_backend::V8InitializeFlags::NoModuleLoader)) {
+        throw std::logic_error("evalModule/registerModule is not supported in AddonMode or NoModuleLoader");
+    }
+    v8::Local<v8::Value> result;
+    (void)performEvalModule(ValueHelper::unwrap(code), ValueHelper::unwrap(source), result);
+    return ValueHelper::wrap<Value>(result);
+}
+Local<Object> Engine::evalModuleNamespace(Local<String> const& code, Local<String> const& source) {
+    if (hasFlag(flags_, v8_backend::V8InitializeFlags::NoModuleLoader)) {
+        throw std::logic_error("evalModuleNamespace is not supported in AddonMode or NoModuleLoader");
+    }
+    v8::Local<v8::Value> result;
+    auto                 module = performEvalModule(ValueHelper::unwrap(code), ValueHelper::unwrap(source), result);
+
+    // A module which is still evaluating (top-level await) has unreadable bindings
+    if (result->IsPromise() && result.As<v8::Promise>()->State() == v8::Promise::kPending) {
+        throw Exception("module is not settled, top-level await is not supported");
+    }
+
+    // The namespace object exposes the live bindings of the module exports
+    return ValueHelper::wrap<Object>(module->GetModuleNamespace().As<v8::Object>());
+}
+
+v8::Local<v8::Module> v8_backend::V8Engine::performEvalModule(
+    v8::Local<v8::String>  code,
+    v8::Local<v8::String>  source,
+    v8::Local<v8::Value>& outResult
+) {
+    auto         isolate = isolate_;
+    v8::TryCatch try_catch(isolate);
+    auto         ctx = context_.Get(isolate);
+
+    auto sourceStr = normalizeModuleSource(isolate, source);
+
+    v8::ScriptOrigin           origin(source, 0, 0, false, -1, v8::Local<v8::Value>(), false, false, true);
+    v8::ScriptCompiler::Source compilerSource(code, origin);
 
     v8::Local<v8::Module> module;
     if (!v8::ScriptCompiler::CompileModule(isolate, &compilerSource).ToLocal(&module)) {
-        v8_backend::V8Helper::rethrowException(try_catch);
-        return {};
+        v8_backend::V8Helper::rethrowException(try_catch, "failed to compile module: " + sourceStr);
     }
 
     // Cache entry modules for handling circular dependencies
@@ -750,26 +779,21 @@ Local<Value> Engine::evalModule(Local<String> const& code, Local<String> const& 
 
     // Instantiate Module (Connect Dependency Graph)
     if (module->InstantiateModule(ctx, v8_backend::V8ModuleLoader::ResolveModuleCallback).IsNothing()) {
-        v8_backend::V8Helper::rethrowException(try_catch);
-        return {};
+        v8_backend::V8Helper::rethrowException(try_catch, "failed to instantiate module: " + sourceStr);
     }
 
-    v8::Local<v8::Value> result;
-    if (!module->Evaluate(ctx).ToLocal(&result)) {
-        v8_backend::V8Helper::rethrowException(try_catch);
-        return {};
+    if (!module->Evaluate(ctx).ToLocal(&outResult)) {
+        v8_backend::V8Helper::rethrowException(try_catch, "failed to evaluate module: " + sourceStr);
     }
 
-    if (result->IsPromise()) {
-        auto promise = result.As<v8::Promise>();
+    if (outResult->IsPromise()) {
+        auto promise = outResult.As<v8::Promise>();
         if (promise->State() == v8::Promise::kRejected) {
             isolate->ThrowException(promise->Result());
-            v8_backend::V8Helper::rethrowException(try_catch);
-            return {};
+            v8_backend::V8Helper::rethrowException(try_catch, "module evaluation rejected: " + sourceStr);
         }
     }
-
-    return ValueHelper::wrap<Value>(result);
+    return module;
 }
 
 
