@@ -41,12 +41,15 @@ Local<Number> Number::newNumber(double d) {
     auto ctx = qjs_backend::QjsHelper::currentContextChecked();
     return Local<Number>{JS_NewFloat64(ctx, d)};
 }
-Local<Number> Number::newNumber(int i) {
+Local<Number> Number::newNumber(int32_t i32) {
     auto ctx = qjs_backend::QjsHelper::currentContextChecked();
-    return Local<Number>{JS_NewInt32(ctx, i)};
+    return Local<Number>{JS_NewInt32(ctx, i32)};
 }
 Local<Number> Number::newNumber(float f) { return newNumber(static_cast<double>(f)); }
-
+Local<Number> Number::newNumber(uint32_t u32) {
+    auto ctx = qjs_backend::QjsHelper::currentContextChecked();
+    return Local<Number>{JS_NewUint32(ctx, u32)};
+}
 
 Local<BigInt> BigInt::newBigInt(int64_t i) {
     auto ctx = qjs_backend::QjsHelper::currentContextChecked();

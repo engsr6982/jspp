@@ -2,11 +2,13 @@
 #include "Fwd.h"
 #include "jspp/Macro.h"
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 
-#include "jspp-backend/traits/TraitValue.h"
 #include "jspp-backend/traits/TraitEngine.h"
+#include "jspp-backend/traits/TraitValue.h"
+
 
 namespace jspp {
 
@@ -50,8 +52,9 @@ class Number : public Value {
 public:
     Number() = delete;
     [[nodiscard]] static Local<Number> newNumber(double d);
-    [[nodiscard]] static Local<Number> newNumber(int i);
+    [[nodiscard]] static Local<Number> newNumber(int32_t i32);
     [[nodiscard]] static Local<Number> newNumber(float f);
+    [[nodiscard]] static Local<Number> newNumber(uint32_t u32);
 };
 
 class BigInt : public Value {

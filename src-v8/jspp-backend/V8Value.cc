@@ -7,6 +7,7 @@
 #include "jspp/core/ValueHelper.h"
 
 
+#include <cstdint>
 #include <string_view>
 #include <utility>
 
@@ -46,13 +47,17 @@ Local<Number> Number::newNumber(double d) {
     auto isolate = v8_backend::V8Helper::currentIsolateChecked();
     return Local<Number>{v8::Number::New(isolate, d)};
 }
-Local<Number> Number::newNumber(int i) {
+Local<Number> Number::newNumber(int32_t i32) {
     auto isolate = v8_backend::V8Helper::currentIsolateChecked();
-    return Local<Number>{v8::Number::New(isolate, i)};
+    return Local<Number>{v8::Integer::New(isolate, i32)};
 }
 Local<Number> Number::newNumber(float f) {
     auto isolate = v8_backend::V8Helper::currentIsolateChecked();
     return Local<Number>{v8::Number::New(isolate, f)};
+}
+Local<Number> Number::newNumber(uint32_t u32) {
+    auto isolate = v8_backend::V8Helper::currentIsolateChecked();
+    return Local<Number>{v8::Integer::NewFromUnsigned(isolate, u32)};
 }
 
 

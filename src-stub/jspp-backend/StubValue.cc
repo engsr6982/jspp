@@ -36,7 +36,7 @@ Local<Number> Number::newNumber(double d) {
     // TODO: please implement this
     throw Exception{"Not implemented"};
 }
-Local<Number> Number::newNumber(int i) {
+Local<Number> Number::newNumber(int32_t i32) {
     // TODO: please implement this
     throw Exception{"Not implemented"};
 }
@@ -44,7 +44,10 @@ Local<Number> Number::newNumber(float f) {
     // TODO: please implement this
     throw Exception{"Not implemented"};
 }
-
+Local<Number> Number::newNumber(uint32_t u32) {
+    // TODO: please implement this
+    throw Exception{"Not implemented"};
+}
 
 Local<BigInt> BigInt::newBigInt(int64_t i) {
     // TODO: please implement this
