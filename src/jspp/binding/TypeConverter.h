@@ -153,6 +153,14 @@ struct GenericTypeConverter {
             if (!engine.trySetReferenceInternal(parent.asObject(), jsObj)) {
                 throw Exception("Failed to set reference internal");
             }
+
+            // 子包装器只持有父对象内存的裸指针: 父被 invalidate() 后子必须一起失效,
+            // 否则读取子会读到已释放内存。shared_ptr 成员的子自带持有权, 不受父影响。
+            auto* parentPayload = engine.getInstancePayload(parent.asObject());
+            auto* childPayload  = engine.getInstancePayload(jsObj);
+            if (parentPayload != nullptr && childPayload != nullptr && !childPayload->getHolder().is_owned()) {
+                childPayload->getHolder().linkParent(&parentPayload->getHolder());
+            }
         }
 
         // 瞬态作用域（溯源式跟踪）：

@@ -31,6 +31,9 @@ public:
     Holder value_;
     void*  most_derived_ptr_;
 
+    /// 父实例, 不持有 (kReferenceInternal 成员包装器), 见 NativeInstance::linkParent
+    NativeInstance const* linkedParent_{nullptr};
+
     explicit PointerNativeInstance(ClassMeta const* meta, Holder value, void* most_derived_ptr)
     : NativeInstance(meta),
       value_(std::move(value)),
@@ -48,7 +51,13 @@ public:
         }
     }
 
+    void linkParent(NativeInstance const* parent) noexcept override { linkedParent_ = parent; }
+
     bool is_expired() const override {
+        // 父实例已失效时, 子实例同样失效 (错误路径)
+        if (linkedParent_ != nullptr && linkedParent_->is_expired()) [[unlikely]] {
+            return true;
+        }
         if constexpr (std::is_pointer_v<Holder>) {
             return value_ == nullptr;
         } else {

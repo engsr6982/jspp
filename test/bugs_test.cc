@@ -435,4 +435,249 @@ TEST_CASE_METHOD(BugTestFixture, "Bug: lambda method binding (const-ref kCopy / 
 }
 
 
+
+// ============================================================
+// ReferenceInternal 生命周期安全性（4 种释放场景）
+//
+// 父对象 Actor 有两种所有权来源：
+//   - JS 持有：new Actor() 创建，包装器独占持有 C++ 对象（ValueNativeInstance 内联）
+//   - C++ 持有：ActorWorld.acquire() 返回裸引用，包装器为非拥有型（kReference）
+// 子包装器（a.state, kReferenceInternal）仅持有指向父对象内存的裸指针
+// （Actor::ActorState&），并通过隐藏属性钉住父“包装器”不被回收。
+//
+// 安全性契约（每个场景都要验证父与子）：
+//   1. 子可达期间，父的 C++ 内存绝不可被回收（否则子访问即 UAF）；
+//   2. 父被清理后，子必须“联动失效”——访问抛出受控异常
+//      ("Accessing destroyed instance")，而不是读到悬垂内存；
+//   3. 释放路径不产生 double-free / 漏析构（析构计数恰好为 1）。
+// ============================================================
+
+static int g_actorDeleted = 0; // 父对象析构计数
+static int g_stateDeleted = 0; // 子对象（Actor 内联成员）析构计数
+
+class Actor {
+public:
+    struct ActorState {
+        bool alive_{true};
+        bool dead_{false};
+
+        ~ActorState() { ++g_stateDeleted; }
+    };
+
+    int id{0};
+    ActorState state_;
+
+    Actor(int id) : id(id) {}
+    ~Actor() { ++g_actorDeleted; }
+};
+
+// C++ 侧持有 Actor（unique_ptr 独占所有权），向 JS 暴露非拥有引用
+// 注意：子对象只能经宿主派生、禁止脚本构造，但必须声明为实例类（.ctor(nullptr)），
+// 否则 registerClass 会将其当作静态类处理
+class ActorWorld {
+    static inline std::unique_ptr<Actor> actor_;
+
+public:
+    static Actor& acquire(int id) {
+        actor_ = std::make_unique<Actor>(id);
+        return *actor_;
+    }
+    static Actor& current() { return *actor_; } // 复用既有对象，不触发析构
+    static void release() { actor_.reset(); }   // C++ 主动 delete 父对象
+    static bool held() { return actor_ != nullptr; }
+};
+
+static auto ActorStateMeta = binding::defClass<Actor::ActorState>("ActorState")
+            .ctor(nullptr)
+            .prop("alive", &Actor::ActorState::alive_)
+            .prop("dead", &Actor::ActorState::dead_)
+            .build();
+static auto ActorMeta = binding::defClass<Actor>("Actor")
+            .ctor<int>()
+            .prop("id", &Actor::id)
+            .prop("state", &Actor::state_, binding::ReturnValuePolicy::kReferenceInternal)
+            .build();
+static auto ActorWorldMeta = binding::defClass<void>("ActorWorld")
+            .func("acquire", &ActorWorld::acquire, binding::ReturnValuePolicy::kReference)
+            .func("current", &ActorWorld::current, binding::ReturnValuePolicy::kReference)
+            .func("release", &ActorWorld::release)
+            .func("held", &ActorWorld::held)
+            .build();
+
+// 场景 1：脚本持有对象（JS new）- 脚本主动释放
+// 脚本 null 父引用 -> 子仍钉住父；子 null 后 -> 父子恰好各析构一次
+TEST_CASE_METHOD(BugTestFixture, "ReferenceInternal: JS-held object - script releases refs", "[bugs]") {
+    EngineScope lock{*engine};
+    engine->registerClass(ActorMeta);
+    engine->registerClass(ActorStateMeta);
+
+    const int actorBase = g_actorDeleted;
+    const int stateBase = g_stateDeleted;
+
+    // 父对象状态正常：id 写回生效
+    auto r1 = engine->evalScript(String::newString(R"(
+        globalThis.a = new Actor(7);
+        globalThis.s = a.state;
+        a.id === 7 && s.alive === true && s.dead === false;
+    )"));
+    REQUIRE(r1.isBoolean());
+    REQUIRE(r1.asBoolean().getValue());
+
+    // 脚本释放父引用：子可达 -> 父内存绝不可被回收
+    engine->evalScript(String::newString("globalThis.a = null;"));
+    engine->gc();
+    CHECK(g_actorDeleted == actorBase);
+    // 子对象状态正常且仍可写回（证明父内存确实存活）
+    auto r2 = engine->evalScript(String::newString("s.alive === true && (s.dead = true, s.dead === true);"));
+    REQUIRE(r2.asBoolean().getValue());
+
+    // 脚本释放子引用：隐藏属性解除 -> 父安全回收，恰好一次
+    engine->evalScript(String::newString("globalThis.s = null;"));
+    engine->gc();
+    CHECK(g_actorDeleted == actorBase + 1);
+    CHECK(g_stateDeleted == stateBase + 1);
+}
+
+// 场景 2（父对象部分）：C++ 持有对象 - C++ 主动 delete
+// C++ 删除父对象前，先对父包装器执行 invalidate（C++ 侧能做到的最佳配合），
+// 验证父对象访问联动失效：必须抛受控异常，不得 UAF。
+TEST_CASE_METHOD(BugTestFixture, "ReferenceInternal: C++-held object - C++ delete - parent linked invalidation", "[bugs]") {
+    EngineScope lock{*engine};
+    engine->registerClass(ActorMeta);
+    engine->registerClass(ActorStateMeta);
+    engine->registerClass(ActorWorldMeta);
+
+    const int actorBase = g_actorDeleted;
+
+    auto r = engine->evalScript(String::newString(R"(
+        globalThis.a = ActorWorld.acquire(1);
+        globalThis.s = a.state;
+        a.id === 1 && s.alive === true; // 删除前父子状态正常
+    )"));
+    REQUIRE(r.asBoolean().getValue());
+
+    // 模拟“尽责的 C++ 宿主”：delete 前使父包装器过期
+    auto aVal = engine->globalThis().get(String::newString("a"));
+    REQUIRE(aVal.isObject());
+    engine->getInstancePayload(aVal.asObject())->getHolder().invalidate();
+    ActorWorld::release(); // C++ delete
+    CHECK(g_actorDeleted == actorBase + 1);
+
+    // 父对象访问：已 invalidate -> 受控异常
+    REQUIRE_THROWS_MATCHES(
+        engine->evalScript(String::newString("a.id")),
+        Exception,
+        Catch::Matchers::MessageMatches(Catch::Matchers::ContainsSubstring("Accessing destroyed instance"))
+    );
+}
+
+// 场景 2（子对象部分）：C++ 持有对象 - C++ 主动 delete
+// 即使父包装器已 invalidate，子包装器（kReferenceInternal，裸 ActorState*）
+// 与父之间只有“JS 包装器级”的隐藏引用，无任何过期联动 -> 按契约应抛受控异常；
+// 若机制缺失，此处将直接命中 ASan 的 heap-use-after-free。
+TEST_CASE_METHOD(BugTestFixture, "ReferenceInternal: C++-held object - C++ delete - child linked invalidation", "[bugs]") {
+    EngineScope lock{*engine};
+    engine->registerClass(ActorMeta);
+    engine->registerClass(ActorStateMeta);
+    engine->registerClass(ActorWorldMeta);
+
+    const int actorBase = g_actorDeleted;
+
+    engine->evalScript(String::newString(R"(
+        globalThis.a = ActorWorld.acquire(1);
+        globalThis.s = a.state;
+    )"));
+
+    // C++ 侧持有父包装器句柄，脚本随后放弃引用（父包装器只由子的隐藏引用保活）
+    Global<Object> aWrapper;
+    aWrapper.reset(engine->globalThis().get(String::newString("a")).asObject());
+    engine->evalScript(String::newString("globalThis.a = null;"));
+
+    // C++ 持有对象时的做法：delete 前先 invalidate() 父包装器
+    engine->getInstancePayload(aWrapper.get())->getHolder().invalidate();
+    ActorWorld::release(); // C++ delete 父对象
+    CHECK(g_actorDeleted == actorBase + 1);
+
+    // 子对象访问：契约要求联动失效（受控异常），而非 UAF
+    REQUIRE_THROWS_MATCHES(
+        engine->evalScript(String::newString("s.alive")),
+        Exception,
+        Catch::Matchers::MessageMatches(Catch::Matchers::ContainsSubstring("Accessing destroyed instance"))
+    );
+}
+
+// 场景 3：脚本持有对象（JS new）- C++ 主动清理
+// C++ 侧 remove 掉 globalThis 上的脚本引用并 GC：父子随隐藏引用链一并回收，
+// finalizer 顺序不得产生 UAF / double-free
+TEST_CASE_METHOD(BugTestFixture, "ReferenceInternal: JS-held object - C++ cleans up", "[bugs]") {
+    EngineScope lock{*engine};
+    engine->registerClass(ActorMeta);
+    engine->registerClass(ActorStateMeta);
+
+    const int actorBase = g_actorDeleted;
+    const int stateBase = g_stateDeleted;
+
+    engine->evalScript(String::newString(R"(
+        globalThis.a = new Actor(11);
+        globalThis.s = a.state;
+    )"));
+    CHECK(g_actorDeleted == actorBase);
+
+    // C++ 主动清理父引用：子仍钉住父 -> 不得析构
+    auto gt = engine->globalThis();
+    gt.remove(String::newString("a"));
+    engine->gc();
+    CHECK(g_actorDeleted == actorBase);
+
+    // C++ 主动清理子引用：父子一并安全回收，各恰好一次
+    gt.remove(String::newString("s"));
+    engine->gc();
+    CHECK(g_actorDeleted == actorBase + 1);
+    CHECK(g_stateDeleted == stateBase + 1);
+}
+
+// 场景 4：C++ 持有对象 - 脚本释放引用
+// 非拥有型包装器被脚本丢弃 -> 只释放包装器，绝不销毁 C++ 对象；
+// C++ 稍后 delete -> 恰好一次，无 double-free、无泄漏
+TEST_CASE_METHOD(BugTestFixture, "ReferenceInternal: C++-held object - script releases refs", "[bugs]") {
+    EngineScope lock{*engine};
+    engine->registerClass(ActorMeta);
+    engine->registerClass(ActorStateMeta);
+    engine->registerClass(ActorWorldMeta);
+
+    const int actorBase = g_actorDeleted;
+    const int stateBase = g_stateDeleted;
+
+    // 脚本释放 a 的引用、保留 s：父包装器被子钉住，状态正常
+    auto r1 = engine->evalScript(String::newString(R"(
+        globalThis.a = ActorWorld.acquire(9);
+        globalThis.s = a.state;
+        globalThis.a = null;
+        s.alive === true;
+    )"));
+    REQUIRE(r1.asBoolean().getValue());
+    CHECK(ActorWorld::held());
+
+    // 脚本释放 s：两个非拥有包装器先后回收，C++ 对象必须毫发无损
+    engine->evalScript(String::newString("globalThis.s = null;"));
+    engine->gc();
+    CHECK(g_actorDeleted == actorBase);
+    CHECK(ActorWorld::held());
+
+    // 对象状态正常：把同一个 C++ 对象重新暴露给脚本，读写完好（未被包装器回收误伤）
+    auto r2 = engine->evalScript(String::newString(R"(
+        globalThis.b = ActorWorld.current();
+        b.id === 9 && b.state.alive === true;
+    )"));
+    REQUIRE(r2.asBoolean().getValue());
+    engine->evalScript(String::newString("globalThis.b = null;"));
+    engine->gc();
+
+    // C++ 最终 delete：恰好析构一次（前面 GC 未产生 double-free）
+    ActorWorld::release();
+    CHECK(g_actorDeleted == actorBase + 1);
+    CHECK(g_stateDeleted == stateBase + 1);
+}
+
+
 } // namespace

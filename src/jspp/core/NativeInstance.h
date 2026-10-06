@@ -40,6 +40,19 @@ public:
 
     virtual enable_trampoline* get_trampoline() const { return nullptr; }
 
+    /**
+     * Let this instance expire together with a parent instance.
+     *
+     * Used by kReferenceInternal member wrappers, which only hold a raw pointer into the
+     * parent object's memory: after the parent is invalidated, reading the member must
+     * throw instead of reading freed memory.
+     *
+     * @param parent Not owned. The child's JS wrapper keeps the parent wrapper alive, so
+     *        the parent instance cannot be destroyed before the child instance.
+     * @note The default implementation ignores the parent.
+     */
+    virtual void linkParent(NativeInstance const* parent) noexcept { (void)parent; }
+
     template <typename T>
     T* unwrap() const {
         if (is_expired()) {

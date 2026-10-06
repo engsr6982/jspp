@@ -53,6 +53,11 @@ enum class ReturnValuePolicy : uint8_t {
      * @note 与 kReference 一样受 TransientObjectScope 的溯源式跟踪约束（见 kReference 注释）。
      * @note 实例成员指针 prop（`.prop("x", &T::x)`）默认使用此策略：kAutomatic 会被自动升级为
      *       kReferenceInternal，使类类型成员的引用可写回且宿主被保活；值类型成员不受影响。
+     * @note 父包装器被 invalidate() 后，它的 kReferenceInternal 成员包装器一起失效，
+     *       访问成员会抛 "Accessing destroyed instance"。
+     * @note 框架不知道 C++ 侧绕过 invalidate() 直接 delete 对象，同一对象的多个包装器之间
+     *       也不会互相影响：C++ 持有对象时需要先 invalidate() 每一个包装器再 delete，
+     *       或改用 shared_ptr 成员（子包装器自带持有权，不受父影响）。
      */
     kReferenceInternal = 5,
 
