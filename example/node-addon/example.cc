@@ -35,7 +35,7 @@ auto const kVec3Meta = jspp::binding::defClass<Vec3>("Vec3")
 
 jspp::ModuleMeta const& buildModule(std::string_view name) {
     static jspp::ModuleMeta const m =
-        jspp::binding::defModule(name).exportFunction("fib", &fib).exportClass(kVec3Meta).build();
+        jspp::binding::defModule(name).export_function("fib", &fib).export_class(kVec3Meta).build();
     return m;
 }
 

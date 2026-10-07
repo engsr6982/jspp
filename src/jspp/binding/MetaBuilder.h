@@ -444,7 +444,7 @@ public:
      */
     explicit constexpr ModuleMetaBuilder(std::string_view name) : name_{name} {}
 
-    [[nodiscard]] decltype(auto) exportDefault(ClassMeta const& meta) {
+    [[nodiscard]] decltype(auto) export_default(ClassMeta const& meta) {
         static_assert(!ExportedByDefault, "Cannot export default twice");
         if (namespace_utils::hasNamespace(meta.name_)) {
             throw std::invalid_argument("Default exports do not support namespace objects");
@@ -452,7 +452,7 @@ public:
         default_ = &meta;
         return ModuleMetaBuilder<true>{std::move(*this)}; // NRVO/move
     }
-    [[nodiscard]] decltype(auto) exportDefault(EnumMeta const& meta) {
+    [[nodiscard]] decltype(auto) export_default(EnumMeta const& meta) {
         static_assert(!ExportedByDefault, "Cannot export default twice");
         if (namespace_utils::hasNamespace(meta.name_)) {
             throw std::invalid_argument("Default exports do not support namespace objects");
@@ -460,19 +460,19 @@ public:
         default_ = &meta;
         return ModuleMetaBuilder<true>{std::move(*this)}; // NRVO/move
     }
-    [[nodiscard]] decltype(auto) exportDefault(GetterCallback getter) {
+    [[nodiscard]] decltype(auto) export_default(GetterCallback getter) {
         static_assert(!ExportedByDefault, "Cannot export default twice");
         default_ = std::move(getter);
         return ModuleMetaBuilder<true>{std::move(*this)}; // NRVO/move
     }
-    [[nodiscard]] decltype(auto) exportDefault(FunctionCallback callback) {
+    [[nodiscard]] decltype(auto) export_default(FunctionCallback callback) {
         static_assert(!ExportedByDefault, "Cannot export default twice");
         default_ = std::move(callback);
         return ModuleMetaBuilder<true>{std::move(*this)}; // NRVO/move
     }
     template <typename T>
     [[nodiscard]] decltype(auto)
-    exportDefaultAsConstant(T&& v, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic) {
+    export_default_as_constant(T&& v, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic) {
         static_assert(!ExportedByDefault, "Cannot export default twice");
         if constexpr (traits::Callable<T>) {
             auto get = adapter::wrapGetter(std::forward<T>(v), policy);
@@ -484,7 +484,7 @@ public:
         return ModuleMetaBuilder<true>{std::move(*this)}; // NRVO/move
     }
     template <traits::Callable T>
-    [[nodiscard]] decltype(auto) exportDefaultAsFunc(T&& v, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic) {
+    [[nodiscard]] decltype(auto) export_default_as_func(T&& v, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic) {
         static_assert(!ExportedByDefault, "Cannot export default twice");
         auto fn  = adapter::wrapFunction(std::forward<T>(v), policy);
         default_ = std::move(fn);
@@ -493,7 +493,7 @@ public:
 
 
     /** @note If the class is in a namespace, jspp will create the namespace */
-    [[nodiscard]] auto& exportClass(ClassMeta const& meta) {
+    [[nodiscard]] auto& export_class(ClassMeta const& meta) {
         if (symbol_.contains(meta.name_)) [[unlikely]] {
             throw std::logic_error{"Export symbol conflict"};
         }
@@ -503,7 +503,7 @@ public:
     }
 
     /** @note If the enum is in a namespace, jspp will create the namespace */
-    [[nodiscard]] auto& exportEnum(EnumMeta const& meta) {
+    [[nodiscard]] auto& export_enum(EnumMeta const& meta) {
         if (symbol_.contains(meta.name_)) [[unlikely]] {
             throw std::logic_error{"Export symbol conflict"};
         }
@@ -513,7 +513,7 @@ public:
     }
 
     /* Export a constant. The getter will be called when the module is instantiated. */
-    [[nodiscard]] auto& exportConstant(std::string name, GetterCallback getter) {
+    [[nodiscard]] auto& export_constant(std::string name, GetterCallback getter) {
         if (symbol_.contains(name)) [[unlikely]] {
             throw std::logic_error{"Export symbol conflict"};
         }
@@ -525,7 +525,7 @@ public:
     /* Export a constant. The getter will be called when the module is instantiated. */
     template <typename T>
     [[nodiscard]] auto&
-    exportConstant(std::string name, T&& v, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic) {
+    export_constant(std::string name, T&& v, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic) {
         if (symbol_.contains(name)) [[unlikely]] {
             throw std::logic_error{"Export symbol conflict"};
         }
@@ -540,7 +540,7 @@ public:
         return *this;
     }
 
-    [[nodiscard]] auto& exportFunction(std::string name, FunctionCallback callback) {
+    [[nodiscard]] auto& export_function(std::string name, FunctionCallback callback) {
         if (symbol_.contains(name)) [[unlikely]] {
             throw std::logic_error{"Export symbol conflict"};
         }
@@ -552,7 +552,7 @@ public:
     template <traits::Callable F>
         requires(!traits::isFunctionCallback_v<F>)
     [[nodiscard]] auto&
-    exportFunction(std::string name, F&& f, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic) {
+    export_function(std::string name, F&& f, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic) {
         if (symbol_.contains(name)) [[unlikely]] {
             throw std::logic_error{"Export symbol conflict"};
         }
@@ -564,7 +564,7 @@ public:
 
     template <traits::Callable... F>
         requires(sizeof...(F) > 1)
-    [[nodiscard]] auto& exportFunction(std::string name, F&&... f) {
+    [[nodiscard]] auto& export_function(std::string name, F&&... f) {
         if (symbol_.contains(name)) [[unlikely]] {
             throw std::logic_error{"Export symbol conflict"};
         }

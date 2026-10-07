@@ -56,11 +56,11 @@ int mathOp2(int a, int b) { return a + b; }
 
 static auto SysModuleMeta =
     defModule("sys")
-        .exportConstant("VERSION", "1.0.0")
-        .exportFunction("ping", []() { return "pong"; })
-        .exportFunction("mathOp", static_cast<int (*)(int)>(&mathOp1), static_cast<int (*)(int, int)>(&mathOp2))
-        .exportClass(ModuleActorMeta)
-        .exportEnum(ModuleStateMeta)
+        .export_constant("VERSION", "1.0.0")
+        .export_function("ping", []() { return "pong"; })
+        .export_function("mathOp", static_cast<int (*)(int)>(&mathOp1), static_cast<int (*)(int, int)>(&mathOp2))
+        .export_class(ModuleActorMeta)
+        .export_enum(ModuleStateMeta)
         .build();
 
 struct ModState {
@@ -74,19 +74,19 @@ static int counterFunc() {
     return ++state->invokeCount;
 }
 
-static auto ModConstMeta   = defModule("mod_const").exportDefaultAsConstant(&counterFunc).build();
-static auto ModFuncMeta    = defModule("mod_func").exportDefaultAsFunc(&counterFunc).build();
-static auto ModLiteralMeta = defModule("mod_literal").exportDefaultAsConstant(42).build();
-static auto ModClassMeta   = defModule("mod_class").exportDefault(ModuleActorMeta).build();
-static auto ModEnumMeta    = defModule("mod_enum").exportDefault(ModuleStateMeta).build();
+static auto ModConstMeta   = defModule("mod_const").export_default_as_constant(&counterFunc).build();
+static auto ModFuncMeta    = defModule("mod_func").export_default_as_func(&counterFunc).build();
+static auto ModLiteralMeta = defModule("mod_literal").export_default_as_constant(42).build();
+static auto ModClassMeta   = defModule("mod_class").export_default(ModuleActorMeta).build();
+static auto ModEnumMeta    = defModule("mod_enum").export_default(ModuleStateMeta).build();
 
 static auto NsClassMeta =
     defClass<ModuleActor>("core.net.Connection").ctor<int>().method("getId", &ModuleActor::getId).build();
 static auto NsEnumMeta = defEnum<ModuleState>("core.net.Status").value("Idle", ModuleState::Idle).build();
 
-static auto NetModuleMeta = defModule("net").exportClass(NsClassMeta).exportEnum(NsEnumMeta).build();
+static auto NetModuleMeta = defModule("net").export_class(NsClassMeta).export_enum(NsEnumMeta).build();
 
-static auto SharedMathMeta = defModule("shared_math").exportConstant("PI", 3.14159).build();
+static auto SharedMathMeta = defModule("shared_math").export_constant("PI", 3.14159).build();
 
 // 静态类以及命名空间静态类 Meta 声明
 static auto MathUtilsMeta =
@@ -101,7 +101,7 @@ static void Logger_log(std::string msg) {
 static auto NsLoggerMeta = defClass<void>("core.utils.Logger").func("log", &Logger_log).build();
 
 static auto StaticClassModuleMeta =
-    defModule("static_mod").exportClass(MathUtilsMeta).exportClass(NsLoggerMeta).build();
+    defModule("static_mod").export_class(MathUtilsMeta).export_class(NsLoggerMeta).build();
 
 
 // ============================================================================
@@ -371,20 +371,20 @@ TEST_CASE("Module: Export Static Class and Namespaced Static Class", "[module]")
 
 TEST_CASE("Module: Edge Cases (C++ Exceptions)", "[module]") {
     // Edge Case 1: Checking for C++ layer exceptions properly rejecting duplicate exports
-    REQUIRE_THROWS_AS(defModule("err1").exportConstant("A", 1).exportConstant("A", 2).build(), std::logic_error);
+    REQUIRE_THROWS_AS(defModule("err1").export_constant("A", 1).export_constant("A", 2).build(), std::logic_error);
 
     REQUIRE_THROWS_AS(
-        defModule("err2").exportFunction("f", []() {}).exportFunction("f", []() {}).build(),
+        defModule("err2").export_function("f", []() {}).export_function("f", []() {}).build(),
         std::logic_error
     );
 
     REQUIRE_THROWS_AS(
-        defModule("err3").exportClass(ModuleActorMeta).exportClass(ModuleActorMeta).build(),
+        defModule("err3").export_class(ModuleActorMeta).export_class(ModuleActorMeta).build(),
         std::logic_error
     );
 
     REQUIRE_THROWS_AS(
-        defModule("err4").exportEnum(ModuleStateMeta).exportEnum(ModuleStateMeta).build(),
+        defModule("err4").export_enum(ModuleStateMeta).export_enum(ModuleStateMeta).build(),
         std::logic_error
     );
 }
