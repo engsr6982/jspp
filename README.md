@@ -269,6 +269,43 @@ namespace jspp::binding::traits {
 }
 ```
 
+#### Custom Native Instance Storage
+
+Every C++ object exposed to JS is carried by a `NativeInstance`. By default the carrier is chosen from the `ReturnValuePolicy` (raw pointer, smart pointer or value). When a type needs a different carrier — a weak reference validated on every access, for example — specialize `NativeInstanceFactory`:
+
+```cpp
+namespace jspp::binding::traits {
+template <>
+struct NativeInstanceFactory<MyType> {
+    template <typename V>
+    static std::unique_ptr<NativeInstance>
+    create(V&& value, ReturnValuePolicy policy, detail::ResolvedCastSource const& resolved) {
+        if (policy == ReturnValuePolicy::kReference || policy == ReturnValuePolicy::kReferencePersistent) {
+            return std::make_unique<MyWeakInstance>(resolved.meta, resolved.ptr);
+        }
+        // other policies keep the default behavior
+        return detail::NativeInstanceFactoryBase<MyType>::create(std::forward<V>(value), policy, resolved);
+    }
+};
+}
+```
+
+The template argument is the element type rather than the returned form, so `MyType*`, `MyType&`, `std::unique_ptr<MyType>`, `std::shared_ptr<MyType>` and a plain `MyType` all land on `NativeInstanceFactory<MyType>`; there is no need to specialize per form. `value` is forwarded in its original form, which keeps policies that depend on that form (`kCopy`, `kMove`, `kTakeOwnership`) available inside your implementation. If a type really has several holding forms, branch on `policy`.
+
+Inside the instance, `resolved.meta` and `resolved.ptr` belong together: the meta carries the type information, the pointer is the base address returned by `cast()`. If you would rather not reimplement the policy dispatch, `traits::detail::NativeInstanceFactoryBase<T>` is the default implementation and can be forwarded to directly.
+
+#### Returning a Prebuilt Native Instance
+
+A bound function may return a carrier instance directly. jspp will not wrap it again, and the type information comes from the instance itself:
+
+```cpp
+.func("get", [](int id) -> std::unique_ptr<MyWeakInstance> {
+    return std::make_unique<MyWeakInstance>(&MyTypeMeta, resolve(id));
+})
+```
+
+Returning a `std::unique_ptr` transfers ownership, and a null pointer becomes JS `null`; a raw pointer is accepted only under an ownership policy (`kAutomatic`, `kTakeOwnership`). `shared_ptr`, references and values carry no unambiguous ownership, and since a carrier is owned by exactly one wrapper, those forms are rejected at compile time.
+
 #### Return Value Policies
 
 | Policy                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |

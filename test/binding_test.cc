@@ -959,4 +959,85 @@ TEST_CASE_METHOD(BindingTestFixture, "enable_trampoline") {
 }
 
 
+// ============================================================================
+// 自定义 NativeInstance 存储 + 返回 unique_ptr<NativeInstance> 的转换路径
+// ============================================================================
+
+struct Bag {
+    int value;
+};
+
+// 自定义存储：不拥有对象，只存一个自己维护的存活标志（模拟 MC 的弱引用存储）
+class WeakBagInstance final : public jspp::NativeInstance {
+    Bag  bag_;
+    bool alive_{true};
+
+public:
+    WeakBagInstance(jspp::ClassMeta const* meta, Bag bag) : jspp::NativeInstance(meta), bag_(bag) {}
+
+    bool is_expired() const override { return !alive_; }
+    void invalidate() override { alive_ = false; }
+
+    std::type_index type_id() const override { return std::type_index(typeid(Bag)); }
+    bool            is_const() const override { return false; }
+    void*           cast(std::type_index target) const override {
+        if (target == std::type_index(typeid(Bag))) {
+            return const_cast<Bag*>(&bag_);
+        }
+        return nullptr;
+    }
+    bool                                  is_owned() const override { return false; }
+    void*                                 release_ownership() override { return nullptr; }
+    std::unique_ptr<jspp::NativeInstance> clone() const override {
+        return std::make_unique<WeakBagInstance>(meta_, bag_);
+    }
+};
+
+static auto BagMeta = jspp::binding::defClass<Bag>("Bag").ctor(nullptr).prop("value", &Bag::value).build();
+
+TEST_CASE_METHOD(BindingTestFixture, "Custom NativeInstance storage") {
+    EngineScope lock{engine.get()};
+    engine->registerClass(BagMeta);
+
+    auto* meta = engine->getClassMeta("Bag");
+    REQUIRE(meta != nullptr);
+
+    // 1) 普通函数返回 unique_ptr<NativeInstance>：直接作为承载实例交给引擎, 不再套一层
+    engine->globalThis().set(
+        String::newString("makeRaw"),
+        Function::newFunction(binding::cpp_func([]() -> std::unique_ptr<NativeInstance> {
+            return jspp::binding::factory::newNativeInstance<Bag>(Bag{7});
+        }))
+    );
+
+    auto raw = engine->evalScript(String::newString("makeRaw()")).asObject();
+    CHECK(raw.get(String::newString("value")).asNumber().getInt32() == 7);
+
+    // meta 取自实例本身, 说明没有按 "T = NativeInstance" 去找类型表
+    auto rawPayload = engine->getInstancePayload(raw);
+    REQUIRE(rawPayload != nullptr);
+    CHECK(rawPayload->getHolder().meta() == meta);
+
+    // 2) 等价写法：自己调 Engine::newInstance(meta, 自己的实例) + 返回 Local<Object>
+    engine->globalThis().set(
+        String::newString("makeWeak"),
+        Function::newFunction(binding::cpp_func([meta]() -> Local<Object> {
+            auto& engine = EngineScope::currentEngineChecked();
+            return engine.newInstance(*meta, std::make_unique<WeakBagInstance>(meta, Bag{42}));
+        }))
+    );
+
+    engine->evalScript(String::newString("globalThis.b = makeWeak();"));
+    auto b = engine->globalThis().get(String::newString("b")).asObject();
+    REQUIRE(b.get(String::newString("value")).asNumber().getInt32() == 42);
+
+    // 失效后再访问：受控异常（is_expired 由自定义存储决定），而不是读到悬垂内存
+    engine->getInstancePayload(b)->getHolder().invalidate();
+    REQUIRE_THROWS_MATCHES(
+        engine->evalScript(String::newString("b.value")),
+        Exception,
+        Catch::Matchers::MessageMatches(Catch::Matchers::ContainsSubstring("Accessing destroyed instance"))
+    );
+}
+
 } // namespace ut

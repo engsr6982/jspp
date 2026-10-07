@@ -267,6 +267,43 @@ namespace jspp::binding::traits {
 }
 ```
 
+#### 自定义承载实例
+
+暴露给 JS 的 C++ 对象都由一个 `NativeInstance` 承载，默认按 `ReturnValuePolicy` 选择（裸指针、智能指针或值）。如果某个类型需要用别的承载方式 —— 比如每次访问都要校验有效性的弱引用 —— 特化 `NativeInstanceFactory` 就行：
+
+```cpp
+namespace jspp::binding::traits {
+template <>
+struct NativeInstanceFactory<MyType> {
+    template <typename V>
+    static std::unique_ptr<NativeInstance>
+    create(V&& value, ReturnValuePolicy policy, detail::ResolvedCastSource const& resolved) {
+        if (policy == ReturnValuePolicy::kReference || policy == ReturnValuePolicy::kReferencePersistent) {
+            return std::make_unique<MyWeakInstance>(resolved.meta, resolved.ptr);
+        }
+        // 其余策略交给默认实现
+        return detail::NativeInstanceFactoryBase<MyType>::create(std::forward<V>(value), policy, resolved);
+    }
+};
+}
+```
+
+模板参数是元素类型而不是返回值形态，`MyType*`、`MyType&`、`std::unique_ptr<MyType>`、`std::shared_ptr<MyType>` 和值 `MyType` 都会落到 `NativeInstanceFactory<MyType>` 上，不用逐个形态写特化。`value` 按原始形态完美转发，所以依赖形态的策略（`kCopy`、`kMove`、`kTakeOwnership`）在自己的实现里照常可用；一个类型真的有好几种持有形态时，在 `policy` 上分支即可。
+
+写实例时 `resolved.meta` 和 `resolved.ptr` 要配对使用：meta 决定类型信息，ptr 是 `cast()` 的起始地址。如果不想自己处理策略分派，`traits::detail::NativeInstanceFactoryBase<T>` 就是默认实现，直接转发过去即可。
+
+#### 直接返回承载实例
+
+绑定函数也可以直接返回承载实例，jspp 不会再包一层，类型信息取自实例自身：
+
+```cpp
+.func("get", [](int id) -> std::unique_ptr<MyWeakInstance> {
+    return std::make_unique<MyWeakInstance>(&MyTypeMeta, resolve(id));
+})
+```
+
+返回 `std::unique_ptr` 表示转移所有权，返回空指针就是 JS 里的 `null`；裸指针只在接管策略（`kAutomatic`、`kTakeOwnership`）下才接受。`shared_ptr`、引用和值没有明确的所有权语义，而承载实例只能由一个包装器持有，所以这几种写法在编译期就会被拒绝。
+
 #### 返回值策略
 
 | 策略                           | 描述                                                                                                                                                                                                                                                                                                                                                                                                                                               |

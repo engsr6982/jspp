@@ -340,19 +340,58 @@ createNativeInstance(T&& value, ReturnValuePolicy policy, traits::detail::Resolv
     }
 }
 
+} // namespace factory
+
+
+namespace traits {
+
+/// 默认承载方式: 裸指针 / 智能指针 / 值, 按 ReturnValuePolicy 分派
+namespace detail {
+
+template <typename T>
+struct NativeInstanceFactoryBase {
+    template <typename V>
+    static std::unique_ptr<NativeInstance>
+    create(V&& value, ReturnValuePolicy policy, ResolvedCastSource const& resolved) {
+        return factory::createNativeInstance(std::forward<V>(value), policy, resolved);
+    }
+};
+
+} // namespace detail
+
+/**
+ * 按类型定制承载实例的工厂。模板参数是元素类型, T* / T& / unique_ptr<T> 都落到
+ * NativeInstanceFactory<T>; 特化它即可改变该类型的承载方式, 主模板保持默认行为。
+ * @see README "Custom Native Instance Storage"
+ */
+template <typename T>
+struct NativeInstanceFactory : detail::NativeInstanceFactoryBase<T> {};
+
+} // namespace traits
+
+
+namespace factory {
+
 template <typename T>
 std::unique_ptr<NativeInstance> wrapNativeInstance(std::unique_ptr<T>&& inst) {
-    auto resolve = traits::detail::resolveCastSource(inst.get());
-    // For smart pointers, the ReturnValuePolicy here has no actual effect.
-    return createNativeInstance(std::move(inst), ReturnValuePolicy::kAutomatic, resolve);
+    // 已经是承载实例, 直接转交
+    if constexpr (std::is_base_of_v<NativeInstance, T>) {
+        return std::move(inst);
+    } else {
+        auto resolve = traits::detail::resolveCastSource(inst.get());
+        // For smart pointers, the ReturnValuePolicy here has no actual effect.
+        return traits::NativeInstanceFactory<T>::create(std::move(inst), ReturnValuePolicy::kAutomatic, resolve);
+    }
 }
 
 template <typename T, typename... Args>
 std::unique_ptr<NativeInstance> newNativeInstance(Args&&... args)
     requires std::constructible_from<T, Args...>
 {
-    if constexpr (isInlineOptimizable_v<T>) {
-        // SOO Optimization
+    if constexpr (std::is_base_of_v<NativeInstance, T>) {
+        return std::make_unique<T>(std::forward<Args>(args)...);
+    } else if constexpr (isInlineOptimizable_v<T>) {
+        // SOO: 小值类型在 ValueNativeInstance 里就地构造, 不经过工厂定制点
         T*   unused  = nullptr;
         auto resolve = traits::detail::resolveCastSource<T>(unused);
         return std::make_unique<ValueNativeInstance<T>>(resolve.meta, std::forward<Args>(args)...);
@@ -364,6 +403,5 @@ std::unique_ptr<NativeInstance> newNativeInstance(Args&&... args)
 
 
 } // namespace factory
-
 
 } // namespace jspp::binding

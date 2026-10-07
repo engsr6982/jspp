@@ -104,6 +104,33 @@ template <typename T>
 namespace detail {
 
 
+/**
+ * 取回"返回值本身就是承载实例"的情况。形态在编译期检查, 只有裸指针要看运行期策略。
+ */
+template <typename ElementT, typename V>
+std::unique_ptr<NativeInstance> takeNativeInstance(V&& value, ReturnValuePolicy policy) {
+    using BaseV = std::remove_reference_t<V>;
+
+    static_assert(
+        traits::is_unique_ptr_v<BaseV> || std::is_pointer_v<BaseV>,
+        "A prebuilt NativeInstance must be returned as std::unique_ptr (or a raw pointer with an ownership policy)"
+    );
+
+    if constexpr (traits::is_unique_ptr_v<BaseV>) {
+        static_assert(!std::is_lvalue_reference_v<V>, "A prebuilt NativeInstance must be transferred by rvalue");
+        return std::forward<V>(value);
+    } else {
+        if (value == nullptr) {
+            return nullptr; // JS 侧 null
+        }
+        if (policy == ReturnValuePolicy::kAutomatic || policy == ReturnValuePolicy::kTakeOwnership) {
+            return std::unique_ptr<ElementT>(value);
+        }
+        throw Exception("A prebuilt NativeInstance needs ownership: return std::unique_ptr, or use kTakeOwnership");
+    }
+}
+
+
 template <typename T>
 struct GenericTypeConverter {
     template <typename U>
@@ -135,15 +162,26 @@ struct GenericTypeConverter {
             rawPtr = &value;
         }
 
-        // 查表：解析对象的最终多态 Meta 和首地址偏移
-        auto resolved = traits::detail::resolveCastSource<ElementType>(rawPtr);
+        std::unique_ptr<NativeInstance> instance;
+        ClassMeta const*                meta = nullptr;
 
-        // 创建包装着 C++ 实例的底座 (NativeInstance)
-        auto instance = factory::createNativeInstance(std::forward<U>(value), policy, resolved);
-        if (!instance) return Null::newNull();
+        if constexpr (std::is_base_of_v<NativeInstance, ElementType>) {
+            // 返回值就是承载实例: 直接用它的 meta 建包装器
+            instance = detail::takeNativeInstance<ElementType>(std::forward<U>(value), policy);
+            if (!instance) return Null::newNull();
+            meta = instance->meta();
+        } else {
+            // 查表：解析对象的最终多态 Meta 和首地址偏移
+            auto resolved = traits::detail::resolveCastSource<ElementType>(rawPtr);
+            meta          = resolved.meta;
+
+            // 创建包装着 C++ 实例的底座 (NativeInstance)
+            instance = traits::NativeInstanceFactory<ElementType>::create(std::forward<U>(value), policy, resolved);
+            if (!instance) return Null::newNull();
+        }
 
         auto&         engine = EngineScope::currentEngineChecked();
-        Local<Object> jsObj  = engine.newInstance(*resolved.meta, std::move(instance));
+        Local<Object> jsObj  = engine.newInstance(*meta, std::move(instance));
 
         if (policy == ReturnValuePolicy::kReferenceInternal
             || policy == ReturnValuePolicy::kReferenceInternalPersistent) {
