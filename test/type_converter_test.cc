@@ -283,3 +283,38 @@ TEST_CASE("Numeric conversion safety") {
         REQUIRE(toCpp<uint32_t>(toJs<uint32_t>(4294967295u)) == 4294967295u);
     }
 }
+
+// 自动策略的推导模型（全部在编译期断言）
+namespace {
+
+struct CopyableOnly {
+    int value{0};
+};
+
+struct MoveOnly {
+    MoveOnly()                           = default;
+    MoveOnly(MoveOnly const&)            = delete;
+    MoveOnly& operator=(MoveOnly const&) = delete;
+    MoveOnly(MoveOnly&&)                 = default;
+};
+
+using P = jspp::binding::ReturnValuePolicy;
+using jspp::binding::detail::resolveAutomaticPolicy;
+
+static_assert(resolveAutomaticPolicy<std::unique_ptr<CopyableOnly>>(P::kAutomatic) == P::kAutomatic);
+static_assert(resolveAutomaticPolicy<std::shared_ptr<CopyableOnly>>(P::kAutomatic) == P::kAutomatic);
+static_assert(resolveAutomaticPolicy<CopyableOnly*>(P::kAutomatic) == P::kReference);
+static_assert(resolveAutomaticPolicy<CopyableOnly&&>(P::kAutomatic) == P::kMove);
+static_assert(resolveAutomaticPolicy<CopyableOnly&>(P::kAutomatic) == P::kCopy);
+static_assert(resolveAutomaticPolicy<CopyableOnly const&>(P::kAutomatic) == P::kCopy);
+static_assert(resolveAutomaticPolicy<MoveOnly&>(P::kAutomatic) == P::kReference); // 不可拷贝的左值
+static_assert(resolveAutomaticPolicy<CopyableOnly>(P::kAutomatic) == P::kMove);   // 可移动优先
+static_assert(resolveAutomaticPolicy<MoveOnly>(P::kAutomatic) == P::kMove);
+
+// 显式策略不会被改写
+static_assert(resolveAutomaticPolicy<CopyableOnly*>(P::kTakeOwnership) == P::kTakeOwnership);
+static_assert(resolveAutomaticPolicy<CopyableOnly&>(P::kReference) == P::kReference);
+
+TEST_CASE("Automatic return value policy derivation") { SUCCEED("checked at compile time"); }
+
+} // namespace

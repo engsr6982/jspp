@@ -198,7 +198,7 @@ void example() {
 
 所有原生对象实例都采用 `NativeInstance` 进行类型擦除托管，使得开发者可以方便的移交智能指针，而无需担心生命周期问题。
 
-> 脚本 new 的对象由引擎负责生命周期，其它对象除非显式指定 `ReturnValuePolicy::kTakeOwnership`，否则均由开发者负责生命周期。
+> 脚本 new 的对象由引擎负责生命周期；其它对象默认由开发者负责，除非显式用 `ReturnValuePolicy::kTakeOwnership` 转移所有权，或通过智能指针返回（`std::unique_ptr` 取走所有权，`std::shared_ptr` 共享所有权）。
 
 #### Trampoline
 
@@ -302,13 +302,26 @@ struct NativeInstanceFactory<MyType> {
 })
 ```
 
-返回 `std::unique_ptr` 表示转移所有权，返回空指针就是 JS 里的 `null`；裸指针只在接管策略（`kAutomatic`、`kTakeOwnership`）下才接受。`shared_ptr`、引用和值没有明确的所有权语义，而承载实例只能由一个包装器持有，所以这几种写法在编译期就会被拒绝。
+返回 `std::unique_ptr` 表示转移所有权，返回空指针就是 JS 里的 `null`；裸指针同样按所有权转移处理（与 jspp 对指针的一贯规则一致）。`shared_ptr`、引用和值没有明确的所有权语义，而承载实例只能由一个包装器持有，所以这几种写法在编译期就会被拒绝。
+
+#### 只按引用暴露的类型
+
+有些类型无法在任意 TU 中完成析构、拷贝或移动 —— 典型例子是析构函数在 `Impl` 不完整处生成的 pImpl 类。`std::is_destructible`、`std::is_copy_constructible` 这类 trait 只看声明，判断不出来，所以需要显式声明：
+
+```cpp
+namespace jspp::binding::traits {
+template <>
+constexpr bool isReferenceOnlyType<MyType> = true;
+}
+```
+
+声明之后 jspp 不再为该类型实例化任何所有权路径：包装器固定为非拥有引用，类型元信息里也不会生成克隆构造函数与克隆析构函数。
 
 #### 返回值策略
 
 | 策略                           | 描述                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kAutomatic`                   | 当返回值为指针时，回退到 `ReturnValuePolicy::kTakeOwnership`；对于右值引用和左值引用，则分别使用 `ReturnValuePolicy::kMove` 和 `ReturnValuePolicy::kCopy`。各策略的具体行为见下文说明。这是默认策略。                                                                                                                                                                                                                                              |
+| `kAutomatic`                   | 默认策略，按返回值形态推导：`std::unique_ptr` 取走所有权，`std::shared_ptr` 引用计数 +1，裸指针按 `kReference`，右值引用按 `kMove`，左值引用可拷贝则 `kCopy`、不可拷贝则 `kReference`，按值返回可移动则 `kMove`、否则可拷贝则 `kCopy`，两者都不行则编译不通过。                                                                                                                                                                                                                                              |
 | `kCopy`                        | 创建返回对象的新副本，该副本归 Js 所有。此策略相对安全，因为两个实例的生命周期相互解耦。                                                                                                                                                                                                                                                                                                                                                           |
 | `kMove`                        | 使用 `std::move` 将返回值的内容移动到新实例中，新实例归 JS 所有。此策略相对安全，因为源实例（被移动方）和目标实例（接收方）的生命周期相互解耦。                                                                                                                                                                                                                                                                                                    |
 | `kReference`                   | 引用现有对象，但不取得其所有权。对象的生命周期管理及不再使用时的内存释放由 C++ 侧负责。(若 C++ 侧销毁了仍被 JS 引用和使用的对象，将导致未定义行为。)当存在 `TransientObjectScope` 时，此策略创建的资源按**溯源规则**被跟踪：仅瞬态根（parent 为空，如回调参数）或从瞬态根派生的包装（parent 的 NativeInstance 已在作用域跟踪集合中）会在作用域退出时被 invalidate（仅使 JS 包装失效，绝不销毁 C++ 对象）；回调内访问长期对象成员创建的包装不受影响 |
@@ -368,6 +381,8 @@ struct NativeInstanceFactory<MyType> {
 | `std::unique_ptr<T, Deleter>` | `T` (脚本实例)²                                | `T` (脚本实例)                                          |
 | `std::reference_wrapper<T>`   | `T` (脚本实例)                                 | `T` (脚本实例)                                          |
 | `std::filesystem::path`       | `String`                                       | `String`                                                |
+
+整数转换遵循 C++ 的隐式转换语义：脚本传 `number` 给任意整型参数都接受，小数部分按 `static_cast` 的方式截断；不是有限数、超出目标类型范围、或传给无符号类型却是负数时抛 `TypeError`。64 位整数以 `BigInt` 传递（超过 2^53 的值往返不丢精度），`BigInt` 输入同样做范围检查；`BigInt` 不接受给浮点参数。
 
 > ¹ `std::variant` 在 `valueless_by_exception()` 状态下返回 `null`。  
 > ² 自定义 `Deleter` 暂不支持。

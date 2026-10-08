@@ -200,7 +200,7 @@ In jspp, all native objects constructed by script `new` use `InstancePayload` to
 
 All native object instances use `NativeInstance` for type-erased management, allowing developers to easily transfer smart pointers without worrying about lifetime issues.
 
-> Objects created by script `new` have their lifetimes managed by the engine. Other objects are managed by the developer unless `ReturnValuePolicy::kTakeOwnership` is explicitly specified.
+> Objects created by script `new` have their lifetimes managed by the engine. Other objects are managed by the developer, unless ownership is transferred explicitly with `ReturnValuePolicy::kTakeOwnership` or with a smart pointer return value (`std::unique_ptr` takes ownership, `std::shared_ptr` shares it).
 
 #### Trampoline
 
@@ -304,13 +304,26 @@ A bound function may return a carrier instance directly. jspp will not wrap it a
 })
 ```
 
-Returning a `std::unique_ptr` transfers ownership, and a null pointer becomes JS `null`; a raw pointer is accepted only under an ownership policy (`kAutomatic`, `kTakeOwnership`). `shared_ptr`, references and values carry no unambiguous ownership, and since a carrier is owned by exactly one wrapper, those forms are rejected at compile time.
+Returning a `std::unique_ptr` transfers ownership, and a null pointer becomes JS `null`; a raw pointer is treated as an ownership transfer as well, the same rule jspp applies to pointers elsewhere. `shared_ptr`, references and values carry no unambiguous ownership, and since a carrier is owned by exactly one wrapper, those forms are rejected at compile time.
+
+#### Reference-only Types
+
+Some types cannot be destroyed, copied or moved in every translation unit — a pImpl class whose destructor is generated where `Impl` is incomplete is the usual example. The usual traits (`std::is_destructible`, `std::is_copy_constructible`, …) only look at declarations, so they cannot detect this. Declare it instead:
+
+```cpp
+namespace jspp::binding::traits {
+template <>
+constexpr bool isReferenceOnlyType<MyType> = true;
+}
+```
+
+jspp then instantiates no ownership path for the type: the wrapper is always a non-owning reference in both directions, and the type metadata carries no clone constructor or clone destructor.
 
 #### Return Value Policies
 
 | Policy                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `kAutomatic`                   | When returning a pointer, falls back to `ReturnValuePolicy::kTakeOwnership`; for rvalue and lvalue references, uses `ReturnValuePolicy::kMove` and `ReturnValuePolicy::kCopy` respectively. See below for specific behaviors. This is the default policy.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `kAutomatic`                   | The default policy, deduced from the returned form: `std::unique_ptr` takes ownership, `std::shared_ptr` bumps the reference count, a raw pointer becomes `kReference`, an rvalue reference becomes `kMove`, an lvalue reference becomes `kCopy` when the type is copy constructible and `kReference` otherwise, and a value becomes `kMove` when the type is move constructible and `kCopy` otherwise (a type that is neither does not compile).                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `kCopy`                        | Creates a new copy of the returned object, owned by JS. Relatively safe because the lifetimes of the two instances are decoupled.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `kMove`                        | Uses `std::move` to move the content of the return value into a new instance owned by JS. Relatively safe because the lifetimes of the source (moved-from) and target (receiving) instances are decoupled.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `kReference`                   | References an existing object without taking ownership. The C++ side is responsible for the object's lifetime management and memory deallocation. (If C++ destroys an object still referenced and used by JS, it leads to undefined behavior.) When a `TransientObjectScope` is active, wrappers created with this policy are tracked **provenance-based**: only transient roots (e.g. callback arguments, whose parent is empty) or wrappers derived from a tracked root (parent's native instance is in the scope's tracked set) are invalidated (JS-side wrapper only — the C++ object is never destroyed) when the scope exits. Members of long-lived objects accessed inside a callback are **not** affected. |
@@ -370,6 +383,8 @@ Returning a `std::unique_ptr` transfers ownership, and a null pointer becomes JS
 | `std::unique_ptr<T, Deleter>` | `T` (Script Instance)²                          | `T` (Script Instance)                                    |
 | `std::reference_wrapper<T>`   | `T` (Script Instance)                           | `T` (Script Instance)                                    |
 | `std::filesystem::path`       | `String`                                        | `String`                                                 |
+
+Integers follow C++ implicit conversion semantics: a script `number` is accepted for any integer parameter and its fractional part is truncated the way `static_cast` would, while a value that is not finite, falls outside the target type's range, or is negative for an unsigned target raises a `TypeError`. 64-bit integers travel as `BigInt` (values beyond 2^53 survive the round trip) and `BigInt` input is range-checked the same way; a `BigInt` is not accepted for a floating point parameter.
 
 > ¹ `std::variant` returns `null` in the `valueless_by_exception()` state.  
 > ² Custom `Deleter` is currently not supported.

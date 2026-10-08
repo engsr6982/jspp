@@ -9,9 +9,13 @@ namespace jspp::binding {
 
 enum class ReturnValuePolicy : uint8_t {
     /**
-     * 当返回值为指针时，回退到 ReturnValuePolicy::kTakeOwnership；
-     * 右值引用回退到 kMove；左值引用与按值返回默认是拷贝语义，回退到 kCopy。
-     * 类型不可拷贝时改为：左值引用回退到 kReference（非拥有引用），按值返回回退到 kMove。
+     * 按返回值形态推导：
+     * - std::unique_ptr：取走所有权（kAutomatic 交给 createNativeInstance 的智能指针分支处理）
+     * - std::shared_ptr：引用计数 +1（同上）
+     * - 裸指针：kReference（不接管所有权）
+     * - 右值引用：kMove
+     * - 左值引用：可拷贝则为 kCopy，否则 kReference
+     * - 按值返回：可移动则为 kMove，否则可拷贝则为 kCopy，两者都不行则编译期报错
      * 各策略的具体行为见下文说明。这是默认策略。
      */
     kAutomatic = 0,
@@ -85,24 +89,35 @@ struct is_policy : std::is_same<std::decay_t<T>, ReturnValuePolicy> {};
 namespace detail {
 
 template <typename T>
-ReturnValuePolicy resolveAutomaticPolicy(ReturnValuePolicy policy) {
+constexpr ReturnValuePolicy resolveAutomaticPolicy(ReturnValuePolicy policy) {
     if (policy == ReturnValuePolicy::kAutomatic) {
         using Raw = std::remove_cvref_t<T>;
-        if constexpr (std::is_pointer_v<T>) {
-            return ReturnValuePolicy::kTakeOwnership;
+        if constexpr (traits::is_unique_ptr_v<Raw> || traits::is_shared_ptr_v<Raw>) {
+            // 智能指针保持 kAutomatic: 由 createNativeInstance 的智能指针分支处理所有权
+            // (unique_ptr 取走, shared_ptr 引用计数 +1)
+            return ReturnValuePolicy::kAutomatic;
+        } else if constexpr (std::is_pointer_v<Raw>) {
+            // 裸指针不接管所有权
+            return ReturnValuePolicy::kReference;
         } else if constexpr (std::is_rvalue_reference_v<T>) {
             return ReturnValuePolicy::kMove;
-        } else if constexpr (!traits::is_unique_ptr_v<T> && !traits::is_shared_ptr_v<T>) {
-            // 左值引用与按值返回（非智能指针）：默认拷贝语义（创建独立副本，归 JS 所有），
-            // 智能指针保持 kAutomatic，由 createNativeInstance 的智能指针分支自行处理所有权
+        } else if constexpr (std::is_lvalue_reference_v<T>) {
             if constexpr (std::is_copy_constructible_v<Raw>) {
                 return ReturnValuePolicy::kCopy;
-            } else if constexpr (std::is_lvalue_reference_v<T>) {
+            } else {
                 // 不可拷贝的左值只能按非拥有引用暴露: kCopy 需要实例化析构函数,
                 // 而这类类型的析构可能不在当前 TU 可见
                 return ReturnValuePolicy::kReference;
+            }
+        } else {
+            static_assert(
+                std::is_move_constructible_v<Raw> || std::is_copy_constructible_v<Raw>,
+                "A value returned by value must be move or copy constructible"
+            );
+            if constexpr (std::is_move_constructible_v<Raw>) {
+                return ReturnValuePolicy::kMove;
             } else {
-                return ReturnValuePolicy::kMove; // 按值返回的不可拷贝类型按移动处理
+                return ReturnValuePolicy::kCopy;
             }
         }
     }
