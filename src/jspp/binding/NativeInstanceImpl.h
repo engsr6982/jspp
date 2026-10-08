@@ -16,6 +16,22 @@
 
 
 namespace jspp::binding {
+namespace traits {
+
+/**
+ * 只能以非拥有方式暴露给 JS 的类型。
+ *
+ * 适用于无法在任意 TU 中完成析构、拷贝或移动的类型, 例如析构函数定义在实现文件里的
+ * pImpl 类。std::is_destructible 这类 trait 只检查声明是否可用, 判断不出这一点,
+ * 因此需要在这里显式声明。
+ *
+ * 特化为 true 之后, jspp 不为该类型实例化任何所有权路径: 承载实例固定为非拥有引用,
+ * 类型元信息里也不生成克隆构造函数与克隆析构函数。
+ */
+template <typename T>
+constexpr bool isReferenceOnlyType = false;
+
+} // namespace traits
 
 /**
  * Owns pointer ownership and manages the lifecycle of large objects (internally uses secondary heap allocation)
@@ -223,6 +239,25 @@ template <typename T>
 std::unique_ptr<NativeInstance>
 createNativeInstance(T&& value, ReturnValuePolicy policy, traits::detail::ResolvedCastSource const& resolved) {
     using BaseT       = std::remove_reference_t<T>;
+
+    if constexpr (traits::isReferenceOnlyType<std::remove_cv_t<typename traits::detail::ElementTypeExtractor<T>::type>>) {
+        static_assert(
+            std::is_pointer_v<BaseT> || std::is_lvalue_reference_v<T>,
+            "A reference-only type must be passed by pointer or lvalue reference"
+        );
+        auto* ptr = const_cast<void*>(resolved.ptr);
+        if constexpr (std::is_pointer_v<BaseT>) {
+            if (!value) return nullptr;
+        }
+        using Elem = std::remove_cv_t<typename traits::detail::ElementTypeExtractor<T>::type>;
+        return std::make_unique<PointerNativeInstance<Elem, Elem*>>(
+            resolved.meta,
+            static_cast<Elem*>(ptr),
+            ptr
+        );
+    }
+ else {
+
     using ElementType = typename traits::detail::ElementTypeExtractor<T>::type;
     // 拷贝/移动创建独立副本：副本不继承源的 const 语义（const 是源对象的属性），
     // 引用类策略（kReference 系列）仍保留 const。
@@ -264,7 +299,11 @@ createNativeInstance(T&& value, ReturnValuePolicy policy, traits::detail::Resolv
         // Handle the ownership and lifecycle of objects according to the strategy
         switch (policy) {
         case ReturnValuePolicy::kCopy:
-            if (resolved.is_downcasted) {
+            // 拷贝会构造副本并最终析构它, 所以整段按"类型是否可拷贝"做编译期门控:
+            // 不可拷贝的类型不实例化任何需要析构的代码, 只在真正走到这个分支时报错
+            if constexpr (!std::is_copy_constructible_v<CopyElementT>) {
+                [[unlikely]] throw std::logic_error("Object is not copy constructible");
+            } else if (resolved.is_downcasted) {
                 auto copy = resolved.meta->instanceMeta_.copyCloneCtor_;
                 if (!copy) [[unlikely]] {
                     throw std::logic_error("Polymorphic type '" + resolved.meta->name_ + "' is not copy constructible");
@@ -281,14 +320,10 @@ createNativeInstance(T&& value, ReturnValuePolicy policy, traits::detail::Resolv
                 ElementType* finalPtr = static_cast<ElementType*>(base);
                 // cloned 来自 copyCloneCtor（new T，可变），const_cast 安全
                 return createImpl(std::unique_ptr<CopyElementT>(const_cast<CopyElementT*>(finalPtr)));
-            }
-            // Non-polymorphic type
-            if constexpr (isInlineOptimizable_v<CopyElementT>) {
+            } else if constexpr (isInlineOptimizable_v<CopyElementT>) {
                 return std::make_unique<ValueNativeInstance<CopyElementT>>(resolved.meta, *rawPtr); // SOO
-            } else if constexpr (std::is_copy_constructible_v<CopyElementT>) {
-                return createImpl(std::make_unique<CopyElementT>(*rawPtr));
             } else {
-                [[unlikely]] throw std::logic_error("Object is not copy constructible");
+                return createImpl(std::make_unique<CopyElementT>(*rawPtr));
             }
 
         case ReturnValuePolicy::kMove:
@@ -338,7 +373,7 @@ createNativeInstance(T&& value, ReturnValuePolicy policy, traits::detail::Resolv
             [[unlikely]] throw std::logic_error("Unknown return value policy");
         }
     }
-}
+    }}
 
 } // namespace factory
 

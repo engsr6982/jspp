@@ -357,11 +357,13 @@ public:
                     return new T(*static_cast<const T*>(src));
                 };
             }
-            if constexpr (std::is_move_constructible_v<T>) {
-                moveCloneCtor = [](void* src) -> void* { return new T(std::move(*static_cast<T*>(src))); };
-            }
-            if constexpr (std::is_destructible_v<T>) {
-                cloneDestructor = [](void* cloned) { delete static_cast<T*>(cloned); };
+            if constexpr (!traits::isReferenceOnlyType<T>) {
+                if constexpr (std::is_move_constructible_v<T>) {
+                    moveCloneCtor = [](void* src) -> void* { return new T(std::move(*static_cast<T*>(src))); };
+                }
+                if constexpr (std::is_destructible_v<T>) {
+                    cloneDestructor = [](void* cloned) { delete static_cast<T*>(cloned); };
+                }
             }
         }
 

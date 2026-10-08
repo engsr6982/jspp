@@ -185,22 +185,16 @@ TEST_CASE_METHOD(FactoryTestFixture, "NativeInstanceFactory: prebuilt instance i
     CHECK(engine->evalScript(String::newString("makeNothing() === null")).asBoolean().getValue());
 }
 
-TEST_CASE_METHOD(FactoryTestFixture, "NativeInstanceFactory: raw pointer needs an ownership policy") {
+TEST_CASE_METHOD(FactoryTestFixture, "NativeInstanceFactory: raw pointer transfers ownership") {
     EngineScope scope{engine.get()};
 
-    // 非接管策略下的裸指针没有明确所有权
-    auto* raw = new TrackingInstance(&WidgetMeta, &widget, false);
-    REQUIRE_THROWS_WITH(
-        binding::detail::takeNativeInstance<TrackingInstance>(raw, ReturnValuePolicy::kReference),
-        Catch::Matchers::ContainsSubstring("needs ownership")
-    );
-
-    // 接管策略下可以转交
-    auto taken = binding::detail::takeNativeInstance<TrackingInstance>(raw, ReturnValuePolicy::kTakeOwnership);
-    REQUIRE(taken != nullptr);
+    // 裸指针沿用 jspp 对指针的一贯规则: 视为所有权转移
+    auto* raw   = new TrackingInstance(&WidgetMeta, new Widget{1}, true); // 实例持有堆上的 Widget
+    auto  taken = binding::detail::takeNativeInstance<TrackingInstance>(raw);
+    REQUIRE(taken.get() == raw);
 
     // 空指针留给 JS 侧 null
-    CHECK(binding::detail::takeNativeInstance<TrackingInstance>(static_cast<TrackingInstance*>(nullptr), ReturnValuePolicy::kReference) == nullptr);
+    CHECK(binding::detail::takeNativeInstance<TrackingInstance>(static_cast<TrackingInstance*>(nullptr)) == nullptr);
 }
 
 } // namespace

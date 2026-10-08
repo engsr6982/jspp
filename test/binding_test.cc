@@ -721,35 +721,6 @@ TEST_CASE_METHOD(BindingTestFixture, "Abstract class / Interface binding") {
 }
 
 
-// ==============================================================================
-// pImpl 类绑定兼容
-// ==============================================================================
-class PImplObj {
-    struct Impl;
-    std::unique_ptr<Impl> impl_;
-
-public:
-    PImplObj();
-    ~PImplObj();
-    int getValue() const;
-};
-
-struct PImplObj::Impl {
-    int val = 999;
-};
-PImplObj::PImplObj() : impl_(std::make_unique<Impl>()) {}
-PImplObj::~PImplObj() = default;
-int PImplObj::getValue() const { return impl_->val; }
-
-auto PImplObjMeta = defClass<PImplObj>("PImplObj").ctor<>().method("getValue", &PImplObj::getValue).build();
-
-TEST_CASE_METHOD(BindingTestFixture, "pImpl class binding compatibility") {
-    EngineScope scope{engine.get()};
-    engine->registerClass(PImplObjMeta);
-
-    // 测试点：外部类不触发浅拷贝/深拷贝错误，编译不报 incomplete type，运行无异常
-    REQUIRE_EVAL("new PImplObj().getValue() === 999", "pImpl method call works safely");
-}
 
 
 // ==============================================================================

@@ -10,8 +10,8 @@ namespace jspp::binding {
 enum class ReturnValuePolicy : uint8_t {
     /**
      * 当返回值为指针时，回退到 ReturnValuePolicy::kTakeOwnership；
-     * 对于右值引用和左值引用，则分别使用 ReturnValuePolicy::kMove 和 ReturnValuePolicy::kCopy；
-     * 按值返回时使用 ReturnValuePolicy::kCopy（默认拷贝语义）。
+     * 右值引用回退到 kMove；左值引用与按值返回默认是拷贝语义，回退到 kCopy。
+     * 类型不可拷贝时改为：左值引用回退到 kReference（非拥有引用），按值返回回退到 kMove。
      * 各策略的具体行为见下文说明。这是默认策略。
      */
     kAutomatic = 0,
@@ -87,14 +87,23 @@ namespace detail {
 template <typename T>
 ReturnValuePolicy resolveAutomaticPolicy(ReturnValuePolicy policy) {
     if (policy == ReturnValuePolicy::kAutomatic) {
+        using Raw = std::remove_cvref_t<T>;
         if constexpr (std::is_pointer_v<T>) {
             return ReturnValuePolicy::kTakeOwnership;
         } else if constexpr (std::is_rvalue_reference_v<T>) {
             return ReturnValuePolicy::kMove;
         } else if constexpr (!traits::is_unique_ptr_v<T> && !traits::is_shared_ptr_v<T>) {
-            // 左值引用与按值返回（非智能指针）：默认拷贝语义（创建独立副本，归 JS 所有）。
+            // 左值引用与按值返回（非智能指针）：默认拷贝语义（创建独立副本，归 JS 所有），
             // 智能指针保持 kAutomatic，由 createNativeInstance 的智能指针分支自行处理所有权
-            return ReturnValuePolicy::kCopy;
+            if constexpr (std::is_copy_constructible_v<Raw>) {
+                return ReturnValuePolicy::kCopy;
+            } else if constexpr (std::is_lvalue_reference_v<T>) {
+                // 不可拷贝的左值只能按非拥有引用暴露: kCopy 需要实例化析构函数,
+                // 而这类类型的析构可能不在当前 TU 可见
+                return ReturnValuePolicy::kReference;
+            } else {
+                return ReturnValuePolicy::kMove; // 按值返回的不可拷贝类型按移动处理
+            }
         }
     }
     return policy;

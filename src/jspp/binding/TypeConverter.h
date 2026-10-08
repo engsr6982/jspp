@@ -107,15 +107,17 @@ namespace detail {
 
 
 /**
- * 取回"返回值本身就是承载实例"的情况。形态在编译期检查, 只有裸指针要看运行期策略。
+ * 取回"返回值本身就是承载实例"的情况。
+ * 形态在编译期检查: 只接受能明确转移所有权的 std::unique_ptr 或裸指针。
+ * 裸指针沿用 jspp 对指针的一贯规则, 视为所有权转移。
  */
 template <typename ElementT, typename V>
-std::unique_ptr<NativeInstance> takeNativeInstance(V&& value, ReturnValuePolicy policy) {
+std::unique_ptr<NativeInstance> takeNativeInstance(V&& value) {
     using BaseV = std::remove_reference_t<V>;
 
     static_assert(
         traits::is_unique_ptr_v<BaseV> || std::is_pointer_v<BaseV>,
-        "A prebuilt NativeInstance must be returned as std::unique_ptr (or a raw pointer with an ownership policy)"
+        "A prebuilt NativeInstance must be returned as std::unique_ptr or as a raw pointer"
     );
 
     if constexpr (traits::is_unique_ptr_v<BaseV>) {
@@ -125,10 +127,7 @@ std::unique_ptr<NativeInstance> takeNativeInstance(V&& value, ReturnValuePolicy 
         if (value == nullptr) {
             return nullptr; // JS 侧 null
         }
-        if (policy == ReturnValuePolicy::kAutomatic || policy == ReturnValuePolicy::kTakeOwnership) {
-            return std::unique_ptr<ElementT>(value);
-        }
-        throw Exception("A prebuilt NativeInstance needs ownership: return std::unique_ptr, or use kTakeOwnership");
+        return std::unique_ptr<ElementT>(value);
     }
 }
 
@@ -187,7 +186,7 @@ struct GenericTypeConverter {
 
         if constexpr (std::is_base_of_v<NativeInstance, ElementType>) {
             // 返回值就是承载实例: 直接用它的 meta 建包装器
-            instance = detail::takeNativeInstance<ElementType>(std::forward<U>(value), policy);
+            instance = detail::takeNativeInstance<ElementType>(std::forward<U>(value));
             if (!instance) return Null::newNull();
             meta = instance->meta();
         } else {
