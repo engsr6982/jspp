@@ -140,8 +140,22 @@ double Local<Number>::getDouble() const { return val->Value(); }
 IMPL_SPECIALIZATION_LOCAL(BigInt);
 IMPL_SPECALIZATION_AS_VALUE(BigInt);
 IMPL_DECL_BACKEND_IMPL_TYPE(BigInt);
-int64_t  Local<BigInt>::getInt64() const { return val->Int64Value(/* lossless? */); }
-uint64_t Local<BigInt>::getUint64() const { return val->Uint64Value(/* lossless? */); }
+int64_t Local<BigInt>::getInt64() const {
+    bool lossless = false;
+    auto v        = val->Int64Value(&lossless);
+    if (!lossless) {
+        throw Exception("BigInt value is out of int64 range", ExceptionType::TypeError);
+    }
+    return v;
+}
+uint64_t Local<BigInt>::getUint64() const {
+    bool lossless = false;
+    auto v        = val->Uint64Value(&lossless);
+    if (!lossless) {
+        throw Exception("BigInt value is out of uint64 range (or negative)", ExceptionType::TypeError);
+    }
+    return v;
+}
 
 
 IMPL_SPECIALIZATION_LOCAL(String);

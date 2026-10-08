@@ -166,15 +166,28 @@ IMPL_DECL_BACKEND_IMPL_TYPE(BigInt);
 int64_t Local<BigInt>::getInt64() const {
     auto    ctx    = qjs_backend::QjsHelper::currentContextChecked();
     int64_t result = 0;
-    int     code   = JS_ToBigInt64(ctx, &result, val);
-    qjs_backend::QjsHelper::rethrowException(code);
+    qjs_backend::QjsHelper::rethrowException(JS_ToBigInt64(ctx, &result, val));
+
+    // quickjs 的转换会按位回绕, 用一次往返比较判断是否无损
+    auto back = JS_NewBigInt64(ctx, result);
+    bool lossless = JS_IsStrictEqual(ctx, val, back);
+    JS_FreeValue(ctx, back);
+    if (!lossless) {
+        throw Exception("BigInt value is out of int64 range", ExceptionType::TypeError);
+    }
     return result;
 }
 uint64_t Local<BigInt>::getUint64() const {
     auto     ctx    = qjs_backend::QjsHelper::currentContextChecked();
     uint64_t result = 0;
-    int      code   = JS_ToBigUint64(ctx, &result, val);
-    qjs_backend::QjsHelper::rethrowException(code);
+    qjs_backend::QjsHelper::rethrowException(JS_ToBigUint64(ctx, &result, val));
+
+    auto back = JS_NewBigUint64(ctx, result);
+    bool lossless = JS_IsStrictEqual(ctx, val, back);
+    JS_FreeValue(ctx, back);
+    if (!lossless) {
+        throw Exception("BigInt value is out of uint64 range (or negative)", ExceptionType::TypeError);
+    }
     return result;
 }
 

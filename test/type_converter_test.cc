@@ -5,8 +5,11 @@
 #include "catch2/catch_test_macros.hpp"
 #include <catch2/catch_approx.hpp>
 
+#include <cmath>
+#include <limits>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -168,4 +171,115 @@ TEST_CASE("TypeConverter full test") {
     REQUIRE(cpp_nested[0] == 1);
     REQUIRE(!cpp_nested[1].has_value());
     REQUIRE(cpp_nested[2] == 3);
+}
+
+
+TEST_CASE("Numeric conversion safety") {
+    auto              engine = std::make_unique<jspp::Engine>();
+    jspp::EngineScope enter{engine.get()};
+
+    using namespace jspp;
+    using namespace jspp::binding;
+
+    auto num = [](double d) { return Number::newNumber(d); };
+    auto big = [&](std::string_view src) { return engine->evalScript(String::newString(src)); };
+
+    SECTION("negative values are rejected for unsigned targets") {
+        REQUIRE_THROWS_AS(toCpp<uint32_t>(num(-1)), jspp::Exception);
+        REQUIRE_THROWS_AS(toCpp<uint64_t>(num(-1)), jspp::Exception);
+        REQUIRE_THROWS_AS(toCpp<uint8_t>(num(-1)), jspp::Exception);
+        REQUIRE(toCpp<unsigned>(num(-0.5)) == 0u); // 截断后是 0, 与 C++ 隐式转换一致
+
+        // 有符号目标照常接受
+        REQUIRE(toCpp<int>(num(-1)) == -1);
+        REQUIRE(toCpp<int64_t>(num(-1)) == -1);
+        REQUIRE(toCpp<double>(num(-1)) == -1.0);
+    }
+
+    SECTION("plain numbers convert to 64-bit targets") {
+        // 脚本给 1, C++ 要 uint64_t / int64_t: 走隐式转换, 不需要写 1n
+        REQUIRE(toCpp<uint64_t>(num(1)) == 1);
+        REQUIRE(toCpp<int64_t>(num(1)) == 1);
+        REQUIRE(toCpp<int64_t>(num(-1)) == -1);
+        REQUIRE(toCpp<uint64_t>(toJs<uint64_t>(12345)) == 12345);
+    }
+
+    SECTION("fractional values follow C++ implicit conversion (truncate)") {
+        REQUIRE(toCpp<int>(num(1.5)) == 1);
+        REQUIRE(toCpp<int>(num(-1.5)) == -1);
+        REQUIRE(toCpp<int8_t>(num(1.999)) == 1);
+        REQUIRE(toCpp<uint32_t>(num(-0.5)) == 0);
+        REQUIRE_THROWS_AS(toCpp<uint32_t>(num(-1.5)), jspp::Exception);
+
+        // 截断之后再判范围
+        REQUIRE(toCpp<uint8_t>(num(255.9)) == 255);
+        REQUIRE_THROWS_AS(toCpp<uint8_t>(num(256.0)), jspp::Exception);
+
+        // 浮点目标照常接受
+        REQUIRE(toCpp<double>(num(1.5)) == Catch::Approx(1.5));
+        REQUIRE(toCpp<float>(num(1.5)) == Catch::Approx(1.5f));
+    }
+
+    SECTION("NaN and Infinity are rejected for integral targets") {
+        REQUIRE_THROWS_AS(toCpp<int>(num(std::nan(""))), jspp::Exception);
+        REQUIRE_THROWS_AS(toCpp<int>(num(std::numeric_limits<double>::infinity())), jspp::Exception);
+        REQUIRE_THROWS_AS(toCpp<uint64_t>(num(-std::numeric_limits<double>::infinity())), jspp::Exception);
+        REQUIRE(std::isnan(toCpp<double>(num(std::nan("")))));
+    }
+
+    SECTION("number range boundaries") {
+        REQUIRE(toCpp<int8_t>(num(-128)) == -128);
+        REQUIRE(toCpp<int8_t>(num(127)) == 127);
+        REQUIRE_THROWS_AS(toCpp<int8_t>(num(-129)), jspp::Exception);
+        REQUIRE_THROWS_AS(toCpp<int8_t>(num(128)), jspp::Exception);
+
+        REQUIRE(toCpp<uint8_t>(num(0)) == 0);
+        REQUIRE(toCpp<uint8_t>(num(255)) == 255);
+        REQUIRE_THROWS_AS(toCpp<uint8_t>(num(256)), jspp::Exception);
+
+        REQUIRE(toCpp<int32_t>(num(2147483647.0)) == 2147483647);
+        REQUIRE_THROWS_AS(toCpp<int32_t>(num(2147483648.0)), jspp::Exception);
+        REQUIRE(toCpp<uint32_t>(num(4294967295.0)) == 4294967295u);
+        REQUIRE_THROWS_AS(toCpp<uint32_t>(num(4294967296.0)), jspp::Exception);
+
+        // 2^63 / 2^64 在 double 里都是精确值, 必须落在对应类型的边界外
+        REQUIRE(toCpp<uint64_t>(num(9223372036854775808.0)) == 9223372036854775808ull);
+        REQUIRE_THROWS_AS(toCpp<int64_t>(num(9223372036854775808.0)), jspp::Exception);
+        REQUIRE(toCpp<int64_t>(num(-9223372036854775808.0)) == std::numeric_limits<int64_t>::min());
+        REQUIRE_THROWS_AS(toCpp<uint64_t>(num(18446744073709551616.0)), jspp::Exception);
+    }
+
+    SECTION("bigint range boundaries") {
+        REQUIRE(toCpp<int64_t>(big("-9223372036854775808n")) == std::numeric_limits<int64_t>::min());
+        REQUIRE(toCpp<int64_t>(big("9223372036854775807n")) == std::numeric_limits<int64_t>::max());
+        REQUIRE_THROWS_AS(toCpp<int64_t>(big("9223372036854775808n")), jspp::Exception);
+        REQUIRE_THROWS_AS(toCpp<int64_t>(big("-9223372036854775809n")), jspp::Exception);
+
+        REQUIRE(toCpp<uint64_t>(big("18446744073709551615n")) == std::numeric_limits<uint64_t>::max());
+        REQUIRE_THROWS_AS(toCpp<uint64_t>(big("18446744073709551616n")), jspp::Exception);
+        REQUIRE_THROWS_AS(toCpp<uint64_t>(big("-1n")), jspp::Exception);
+        REQUIRE_THROWS_AS(toCpp<uint32_t>(big("4294967296n")), jspp::Exception);
+
+        REQUIRE(toCpp<int32_t>(big("-2147483648n")) == std::numeric_limits<int32_t>::min());
+        REQUIRE(toCpp<uint32_t>(big("4294967295n")) == std::numeric_limits<uint32_t>::max());
+
+        // BigInt 不往浮点参数上转
+        REQUIRE_THROWS_AS(toCpp<double>(big("1n")), jspp::Exception);
+    }
+
+    SECTION("toJs keeps the sign of 64-bit integers") {
+        auto bigU = toJs<uint64_t>(18446744073709551615ull);
+        REQUIRE(bigU.isBigInt());
+        REQUIRE(bigU.asBigInt().getUint64() == 18446744073709551615ull);
+        REQUIRE(toCpp<uint64_t>(bigU) == 18446744073709551615ull);
+
+        auto bigI = toJs<int64_t>(-1);
+        REQUIRE(bigI.isBigInt());
+        REQUIRE(bigI.asBigInt().getInt64() == -1);
+        REQUIRE_THROWS_AS(toCpp<uint64_t>(bigI), jspp::Exception);
+
+        // 32 位整数仍然走 Number
+        REQUIRE(toJs<uint32_t>(4294967295u).isNumber());
+        REQUIRE(toCpp<uint32_t>(toJs<uint32_t>(4294967295u)) == 4294967295u);
+    }
 }

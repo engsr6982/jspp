@@ -13,7 +13,9 @@
 
 
 #include <cassert>
+#include <cmath>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -130,6 +132,24 @@ std::unique_ptr<NativeInstance> takeNativeInstance(V&& value, ReturnValuePolicy 
     }
 }
 
+
+/// 2^bits, bits <= 63 时每一步乘法都是精确的, 用来做整数范围检查
+constexpr double pow2(int bits) {
+    double v = 1.0;
+    for (int i = 0; i < bits; ++i) {
+        v *= 2.0;
+    }
+    return v;
+}
+
+/// 把足够宽的整数值收窄到 T, 越界抛异常
+template <typename T, typename U>
+T narrowIntegral(U v) {
+    if (v < static_cast<U>(std::numeric_limits<T>::min()) || v > static_cast<U>(std::numeric_limits<T>::max())) {
+        throw Exception("Integer value is out of range for the target type", ExceptionType::TypeError);
+    }
+    return static_cast<T>(v);
+}
 
 template <typename T>
 struct GenericTypeConverter {
@@ -264,23 +284,63 @@ template <typename T>
     requires concepts::NumberLike<T>
 struct TypeConverter<T> {
     static Local<Value> toJs(T value, ReturnValuePolicy /* policy */, Local<Value> const& /* parent */) {
-        if constexpr (std::same_as<T, int64_t> || std::same_as<T, uint64_t>) {
-            return BigInt::newBigInt(value); // C++ -> Js: 严格类型转换
+        if constexpr (std::is_same_v<T, int64_t>) {
+            return BigInt::newBigInt(value); // 64 位整数用 BigInt, 避免 double 丢精度
+        } else if constexpr (std::is_same_v<T, uint64_t>) {
+            return BigInt::newBigIntUnsigned(value); // 走有符号版本会把 >= 2^63 的值变成负数
+        } else if constexpr (std::is_integral_v<T>) {
+            if constexpr (std::is_signed_v<T>) {
+                return Number::newNumber(static_cast<int32_t>(value));
+            } else {
+                return Number::newNumber(static_cast<uint32_t>(value));
+            }
         } else {
-            return Number::newNumber(value);
+            return Number::newNumber(static_cast<double>(value));
         }
     }
     static T toCpp(Local<Value> const& value) {
-        if (value.isNumber()) {
-            return value.asNumber().getValueAs<T>(); // Js -> C++: 宽松转换
-        }
-        if (value.isBigInt()) {
-            if constexpr (std::same_as<T, int64_t>) {
-                return value.asBigInt().getInt64();
+        // 热路径: 普通 Number 参数
+        if (value.isNumber()) [[likely]] {
+            double d = value.asNumber().getDouble();
+            if constexpr (std::is_integral_v<T>) {
+                if (!std::isfinite(d)) [[unlikely]] { // NaN / Infinity 转整型没有意义
+                    throw Exception("Cannot convert NaN or Infinity to an integer type", ExceptionType::TypeError);
+                }
+                // 与 C++ 隐式转换一致: 小数部分直接截断, 范围检查作用在截断之后的值上
+                double t = std::trunc(d);
+                // 半开区间判定: 上界取 2^bits (double 精确可表示), 免得 2^bits 本身被当成合法值
+                constexpr int bits = std::numeric_limits<T>::digits;
+                if constexpr (std::is_signed_v<T>) {
+                    if (t < -detail::pow2(bits) || t >= detail::pow2(bits)) [[unlikely]] {
+                        throw Exception("Number is out of range for the target type", ExceptionType::TypeError);
+                    }
+                } else {
+                    if (t < 0 || t >= detail::pow2(bits)) [[unlikely]] {
+                        throw Exception(
+                            "Number is out of range for the target type (or negative)",
+                            ExceptionType::TypeError
+                        );
+                    }
+                }
+                return static_cast<T>(t);
             } else {
-                return value.asBigInt().getUint64();
+                // float/double 的转换是定义良好的, 最多溢出成 inf
+                return static_cast<T>(d);
             }
         }
+
+        if (value.isBigInt()) [[unlikely]] {
+            if constexpr (!std::is_integral_v<T>) {
+                throw Exception("BigInt cannot be converted to a floating point type", ExceptionType::TypeError);
+            } else if constexpr (std::is_signed_v<T>) {
+                // 超出 int64 的 BigInt 在后端读取时就抛异常
+                return detail::narrowIntegral<T>(value.asBigInt().getInt64());
+            } else {
+                // 负数与超出 uint64 的 BigInt 在后端读取时就抛异常
+                return detail::narrowIntegral<T>(value.asBigInt().getUint64());
+            }
+        }
+
         [[unlikely]] throw Exception{"Cannot convert value to NumberLike<T>", Exception::Type::TypeError};
     }
 };
