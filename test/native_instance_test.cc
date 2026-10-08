@@ -159,6 +159,23 @@ TEST_CASE_METHOD(FactoryTestFixture, "NativeInstanceFactory: specialization is u
     CHECK(ownedPayload->getHolder().is_owned() == true);
 }
 
+TEST_CASE_METHOD(FactoryTestFixture, "NativeInstanceFactory: const-qualified static type hits the same specialization") {
+    EngineScope scope{engine.get()};
+
+    engine->globalThis().set(
+        String::newString("getWidgetConstRef"),
+        Function::newFunction(binding::cpp_func([this]() -> Widget const& { return widget; },
+                                                ReturnValuePolicy::kReferencePersistent))
+    );
+
+    // 静态类型带 const: 修复前按 const Widget 查工厂, 落到默认实现 -> PointerNativeInstance (裸指针 holder)
+    auto wrapper = engine->evalScript(String::newString("getWidgetConstRef()")).asObject();
+    auto payload = engine->getInstancePayload(wrapper);
+    REQUIRE(payload != nullptr);
+    CHECK(dynamic_cast<TrackingInstance*>(&payload->getHolder()) != nullptr);
+    CHECK(wrapper.get(String::newString("value")).asNumber().getInt32() == 7);
+}
+
 TEST_CASE_METHOD(FactoryTestFixture, "NativeInstanceFactory: prebuilt instance is passed through") {
     EngineScope scope{engine.get()};
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "jspp/binding/traits/TypeTraits.h"
 #include "jspp/core/Engine.h"
 #include "jspp/core/EngineScope.h"
 
@@ -57,7 +58,7 @@ ResolvedCastSource resolveCastSource(T* value) {
 
     // 1. Obtain dynamic type and base address
     const std::type_info* dynamicType = nullptr;
-    const void*           dynamicPtr  = traits::PolymorphicTypeHook<T>::get(value, dynamicType);
+    const void* dynamicPtr = traits::PolymorphicTypeHook<traits::RawType_t<T>>::get(value, dynamicType);
 
     // 2. Try to resolve dynamic type (Downcast)
     if (dynamicType && dynamicPtr) {

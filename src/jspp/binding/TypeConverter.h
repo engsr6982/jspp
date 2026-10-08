@@ -195,7 +195,11 @@ struct GenericTypeConverter {
             meta          = resolved.meta;
 
             // 创建包装着 C++ 实例的底座 (NativeInstance)
-            instance = traits::NativeInstanceFactory<ElementType>::create(std::forward<U>(value), policy, resolved);
+            instance = traits::NativeInstanceFactory<traits::RawType_t<ElementType>>::create(
+                std::forward<U>(value),
+                policy,
+                resolved
+            );
             if (!instance) return Null::newNull();
         }
 

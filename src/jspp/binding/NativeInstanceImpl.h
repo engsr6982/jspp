@@ -415,7 +415,11 @@ std::unique_ptr<NativeInstance> wrapNativeInstance(std::unique_ptr<T>&& inst) {
     } else {
         auto resolve = traits::detail::resolveCastSource(inst.get());
         // For smart pointers, the ReturnValuePolicy here has no actual effect.
-        return traits::NativeInstanceFactory<T>::create(std::move(inst), ReturnValuePolicy::kAutomatic, resolve);
+        return traits::NativeInstanceFactory<traits::RawType_t<T>>::create(
+            std::move(inst),
+            ReturnValuePolicy::kAutomatic,
+            resolve
+        );
     }
 }
 
