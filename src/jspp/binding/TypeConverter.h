@@ -528,9 +528,17 @@ struct TypeConverter<std::function<R(Args...)>> {
     using Fn = std::function<R(Args...)>;
 
     static Local<Value> toJs(Fn const& value, ReturnValuePolicy policy, Local<Value> const& /*parent*/) {
-        return adapter::wrapFunction(std::forward<Fn>(value), policy);
+        if (!value) {
+            return Null::newNull(); // empty callback -> null
+        }
+        return Function::newFunction(adapter::wrapFunction(value, policy));
     }
-    static Fn toCpp(Local<Value> const& value) { return adapter::wrapScriptCallback<R, Args...>(value); }
+    static Fn toCpp(Local<Value> const& value) {
+        if (value.isNullOrUndefined()) {
+            return {}; // null/undefined -> empty callback (std::function{})
+        }
+        return adapter::wrapScriptCallback<R, Args...>(value);
+    }
 };
 
 
@@ -887,6 +895,7 @@ R dispatchOverloadImpl(std::array<C, Len> const& overloads, Args&&... args) {
             return std::invoke(overloads[i], std::forward<Args>(args)...);
         } catch (Exception const&) {
             if (i == Len - 1) [[unlikely]] {
+                // TODO: 改进重载处理方式，优化异常信息
                 throw Exception{"no overload found", Exception::Type::TypeError};
             }
         }

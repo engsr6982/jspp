@@ -1,4 +1,6 @@
 #include "jspp/Jspp.h"
+#include "jspp/binding/BindingUtils.h"
+#include "jspp/binding/MetaBuilder.h"
 #include "jspp/binding/TypeConverter.h"
 
 
@@ -6,6 +8,7 @@
 #include <catch2/catch_approx.hpp>
 
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <string>
@@ -282,6 +285,90 @@ TEST_CASE("Numeric conversion safety") {
         REQUIRE(toJs<uint32_t>(4294967295u).isNumber());
         REQUIRE(toCpp<uint32_t>(toJs<uint32_t>(4294967295u)) == 4294967295u);
     }
+}
+
+// ----------------------------------------------------------------------------
+// std::function: null/undefined -> empty callback
+// ----------------------------------------------------------------------------
+namespace {
+
+struct FormLike {
+    std::string              lastText;
+    std::function<void(int)> lastCallback;
+
+    FormLike& append(std::string const& text, std::function<void(int)> cb) {
+        lastText     = text;
+        lastCallback = std::move(cb);
+        return *this;
+    }
+    FormLike& append(std::string const& a, std::string const& b, std::string const& c, std::function<void(int)> cb) {
+        lastText     = a + b + c;
+        lastCallback = std::move(cb);
+        return *this;
+    }
+
+    std::function<void(int)> const& callback() const { return lastCallback; }
+};
+
+FormLike formInstance;
+
+auto FormLikeMeta = jspp::binding::defClass<FormLike>("FormLike")
+                        .ctor(nullptr)
+                        .method(
+                            "append",
+                            static_cast<FormLike& (FormLike::*)(std::string const&, std::function<void(int)>)>(
+                                &FormLike::append
+                            ),
+                            static_cast<FormLike& (FormLike::*)(std::string const&,
+                                                                std::string const&,
+                                                                std::string const&,
+                                                                std::function<void(int)>)>(&FormLike::append)
+                        )
+                        .method("callback", &FormLike::callback)
+                        .build();
+
+} // namespace
+
+TEST_CASE("std::function accepts null/undefined as empty callback") {
+    auto              engine = std::make_unique<jspp::Engine>();
+    jspp::EngineScope enter{engine.get()};
+
+    using namespace jspp::binding;
+
+    // 直接转换: null / undefined -> 空回调
+    CHECK(!toCpp<std::function<void(int)>>(jspp::Null::newNull()));
+    CHECK(!toCpp<std::function<void(int)>>(jspp::Undefined::newUndefined()));
+
+    // 反向: 空回调 -> null
+    CHECK(toJs(std::function<void(int)>{}).isNull());
+
+    engine->registerClass(FormLikeMeta);
+    engine->globalThis().set(
+        jspp::String::newString("getForm"),
+        jspp::Function::newFunction(
+            cpp_func([]() -> FormLike& { return formInstance; }, ReturnValuePolicy::kReferencePersistent)
+        )
+    );
+
+    // 重载分派: append('a', null) 命中 2 参数重载。（修复前抛 "expected function", 最终报 "no overload found"）
+    REQUIRE_NOTHROW(engine->evalScript(jspp::String::newString("getForm().append('a', null)")));
+    CHECK(formInstance.lastText == "a");
+    CHECK(!formInstance.lastCallback);
+
+    // 4 参数重载同样接受 undefined
+    REQUIRE_NOTHROW(engine->evalScript(jspp::String::newString("getForm().append('x', 'y', 'z', undefined)")));
+    CHECK(formInstance.lastText == "xyz");
+    CHECK(!formInstance.lastCallback);
+
+    // 往返: 函数读回来仍是函数, 空回调读回来是 null
+    engine->evalScript(jspp::String::newString("getForm().append('b', (v) => {})"));
+    CHECK(formInstance.lastCallback != nullptr);
+    CHECK(
+        engine->evalScript(jspp::String::newString("typeof getForm().callback() === 'function'")).asBoolean().getValue()
+    );
+
+    engine->evalScript(jspp::String::newString("getForm().append('c', null)"));
+    CHECK(engine->evalScript(jspp::String::newString("getForm().callback() === null")).asBoolean().getValue());
 }
 
 // 自动策略的推导模型（全部在编译期断言）
