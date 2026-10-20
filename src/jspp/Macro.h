@@ -18,6 +18,13 @@
     static void* operator new[](std::size_t)                        = delete;                                          \
     static void* operator new[](std::size_t, const std::nothrow_t&) = delete;
 
+// MSVC and clang-cl ignore the standard attribute and require the vendor-prefixed form.
+#if defined(_MSC_VER)
+#define JSPP_NO_UNIQUE_ADDRESS [[msvc::no_unique_address]]
+#else
+#define JSPP_NO_UNIQUE_ADDRESS [[no_unique_address]]
+#endif
+
 #define JSPP_DECL_FLAG_OPERATOR(TYPE)                                                                                  \
     inline constexpr TYPE operator|(TYPE lhs, TYPE rhs) {                                                              \
         using Underlying = std::underlying_type_t<TYPE>;                                                               \

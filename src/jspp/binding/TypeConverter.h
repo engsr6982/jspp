@@ -12,6 +12,7 @@
 #include "traits/TypeTraits.h"
 
 
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <functional>
@@ -1165,6 +1166,98 @@ InstanceMethodCallback wrapInstanceMethod(Fn&& fn, ReturnValuePolicy policy) {
         };
     }
 }
+
+/**
+ * @brief Binds an instance member function pointer as a static function that obtains the instance
+ *        from an InstanceProvider on each call.
+ * @tparam Provider Provider type (decayed);
+ * @param provider Invoked for every script call to obtain the instance.
+ * @note The generated callback does not depend on InstancePayload / NativeInstance and creates no
+ *       script-side instance. The host owns the lifetime of the object returned by the provider
+ *       (see the contract of MetaBuilder::instanceProvider).
+ */
+template <typename Provider, typename Method>
+    requires(traits::InstanceProviderFor<Provider, Method>)
+FunctionCallback wrapInstanceProviderMethod(Provider provider, Method method, ReturnValuePolicy policy) {
+    using Trait = traits::FunctionTraits<std::decay_t<Method>>;
+    using R     = typename Trait::ReturnType;
+    using Tuple = typename Trait::ArgsTuple;
+
+    constexpr size_t Count     = Trait::ArgsCount;
+    constexpr bool   isPointer = traits::PointerInstanceProvider<Provider>;
+
+    return [provider = std::move(provider),
+            method   = std::move(method),
+            policy](Arguments const& args) mutable -> Local<Value> {
+        if (args.length() != Count) [[unlikely]] {
+            throw Exception("argument count mismatch", Exception::Type::TypeError);
+        }
+
+        // Obtain the instance on every call; the script-side `this` is irrelevant here.
+        auto fetchInstance = [&]() -> decltype(auto) {
+            if constexpr (isPointer) {
+                auto* ptr = std::invoke(provider);
+                if (ptr == nullptr) [[unlikely]] {
+                    throw Exception("InstanceProvider returned a null pointer", Exception::Type::TypeError);
+                }
+                return *ptr;
+            } else {
+                return std::invoke(provider);
+            }
+        };
+
+        auto invoke = [&](auto&&... unpackedArgs) -> R {
+            return std::invoke(method, fetchInstance(), std::forward<decltype(unpackedArgs)>(unpackedArgs)...);
+        };
+
+        auto parameters = ConvertArgsToTuple<Tuple>(args, std::make_index_sequence<Count>());
+        if constexpr (std::is_void_v<R>) {
+            std::apply(invoke, std::move(parameters));
+            return {}; // undefined
+        } else {
+            decltype(auto) ret = std::apply(invoke, std::move(parameters));
+            return toJs(std::forward<decltype(ret)>(ret), policy, {});
+        }
+    };
+}
+
+template <typename Provider, typename... Overload>
+    requires(traits::BorrowingInstanceProvider<Provider>)
+FunctionCallback wrapInstanceProviderOverloadAndExtraPolicy(Provider const& provider, Overload&&... fn) {
+    constexpr size_t policy_count = (static_cast<size_t>(traits::is_policy<Overload>::value) + ...);
+    static_assert(policy_count <= 1, "ReturnValuePolicy can only appear once in argument list");
+
+    ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic;
+    if constexpr (policy_count > 0) {
+        (
+            [&](auto&& arg) {
+                if constexpr (traits::is_policy<decltype(arg)>::value) {
+                    policy = arg;
+                }
+            }(fn),
+            ...);
+    }
+
+    constexpr size_t func_count = sizeof...(Overload) - policy_count;
+    static_assert(func_count > 0, "No functions provided to overload");
+
+    std::array<FunctionCallback, func_count> overloads{};
+    size_t                                   idx = 0;
+    (
+        [&](auto&& arg) {
+            if constexpr (!traits::is_policy<decltype(arg)>::value) {
+                static_assert(
+                    std::is_member_function_pointer_v<std::remove_cvref_t<decltype(arg)>>,
+                    "When an InstanceProvider is configured, every overload passed to .func() must be a member function "
+                    "pointer"
+                );
+                overloads[idx++] = wrapInstanceProviderMethod(provider, std::forward<decltype(arg)>(arg), policy);
+            }
+        }(std::forward<Overload>(fn)),
+        ...);
+    return _mergeFunctionCallbacks(std::move(overloads));
+}
+
 
 template <size_t Len>
 inline InstanceMethodCallback _mergeMethodCallbacks(std::array<InstanceMethodCallback, Len> overloads) {

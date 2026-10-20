@@ -22,6 +22,50 @@ struct RawTypeHelper {
 template <typename T>
 using RawType_t = typename RawTypeHelper<T>::type;
 
+
+/// A nullary callable that supplies the instance for provider-backed static bindings.
+template <typename P>
+concept InstanceProvider = requires(P& provider) { std::invoke(provider); };
+
+/// An InstanceProvider that returns an lvalue reference (T& or T const&).
+template <typename P>
+concept ReferenceInstanceProvider = InstanceProvider<P> && requires(P& provider) {
+    requires std::is_lvalue_reference_v<decltype(std::invoke(provider))>;
+};
+
+/// An InstanceProvider that returns a pointer (T* or T const*).
+template <typename P>
+concept PointerInstanceProvider = InstanceProvider<P> && requires(P& provider) {
+    requires std::is_pointer_v<std::remove_cvref_t<decltype(std::invoke(provider))>>;
+};
+
+/// An InstanceProvider that borrows the instance: the returned object remains owned by the host.
+template <typename P>
+concept BorrowingInstanceProvider = ReferenceInstanceProvider<P> || PointerInstanceProvider<P>;
+
+/**
+ * @brief Normalized return form of a borrowing InstanceProvider.
+ * @note `Ref` is always an lvalue reference, so it can be compared against the member function's
+ *       class with std::is_convertible_v, covering const qualification and derived-to-base
+ *       upcasting.
+ */
+template <typename P>
+    requires(BorrowingInstanceProvider<P>)
+struct InstanceProviderTraits {
+private:
+    using Unref = std::remove_reference_t<std::invoke_result_t<P&>>;
+    using Bare  = std::remove_cv_t<Unref>;
+
+public:
+    using Pointee = std::conditional_t<PointerInstanceProvider<P>, std::remove_pointer_t<Bare>, Unref>;
+    /// Provided instance type with const removed.
+    using Element = std::remove_cv_t<Pointee>;
+    /// Whether the provider exposes a const instance.
+    static constexpr bool is_const = std::is_const_v<Pointee>;
+    /// Normalized instance reference type: T& or T const&.
+    using Ref = std::conditional_t<is_const, Element const&, Element&>;
+};
+
 template <typename T>
 inline constexpr size_t size_of_v = sizeof(T);
 

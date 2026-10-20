@@ -2,12 +2,16 @@
 #include "ReturnValuePolicy.h"
 #include "TypeConverter.h"
 
+#include "jspp/Macro.h"
 #include "jspp/binding/traits/FunctionTraits.h"
 #include "jspp/binding/traits/TypeTraits.h"
 #include "jspp/core/Concepts.h"
 #include "jspp/core/MetaInfo.h"
+#include "jspp/core/Trampoline.h"
 #include "jspp/core/Utils.h"
 
+#include <concepts>
+#include <cstddef>
 #include <ranges>
 #include <stdexcept>
 #include <string>
@@ -24,7 +28,13 @@ enum class ConstructorKind {
     kDisabled // 禁止Js构造,自动生成空构造回调
 };
 
-template <typename T, ConstructorKind K = ConstructorKind::kNone>
+/**
+ * @tparam T The bound class; `void` denotes a static class (no script-side instances, not constructible from script).
+ * @tparam K Constructor state.
+ * @tparam Provider Stored type of the InstanceProvider; `std::nullptr_t` means it is not configured.
+ *         Only available on static classes (T = void) and configured through `.instanceProvider()`.
+ */
+template <typename T, ConstructorKind K = ConstructorKind::kNone, typename Provider = std::nullptr_t>
 class ClassMetaBuilder {
     std::string                               name_;
     std::vector<StaticMemberMeta::Property>   staticProperty_;
@@ -39,10 +49,29 @@ class ClassMetaBuilder {
     ClassMeta::UpcasterCallback                                      upcaster_ = nullptr;
     std::unordered_map<std::type_index, ClassMeta::UpcasterCallback> extraCasters_;
 
-    static constexpr bool isInstanceClass = !std::is_void_v<T>;
+    // Stored inline (zero-sized for stateless providers); each provider-backed .func() captures its own copy.
+    JSPP_NO_UNIQUE_ADDRESS Provider instanceProvider_{};
 
-    template <ConstructorKind OtherState>
-    explicit ClassMetaBuilder(ClassMetaBuilder<T, OtherState>&& other) noexcept
+    static constexpr bool isInstanceClass     = !std::is_void_v<T>;
+    static constexpr bool hasInstanceProvider = !std::is_same_v<Provider, std::nullptr_t>;
+
+    // Provider is constructed in place (moved when it was already set, otherwise initialized from
+    // the supplied provider), avoiding any assignment.
+    template <typename OtherT, ConstructorKind OtherState, typename OtherProvider, typename P>
+    static Provider makeProvider(ClassMetaBuilder<OtherT, OtherState, OtherProvider>&& other, P&& provider) {
+        if constexpr (std::is_same_v<std::remove_cvref_t<P>, std::nullptr_t>) {
+            if constexpr (std::is_same_v<OtherProvider, Provider>) {
+                return std::move(other.instanceProvider_);
+            } else {
+                return Provider{};
+            }
+        } else {
+            return std::forward<P>(provider);
+        }
+    }
+
+    template <typename OtherT, ConstructorKind OtherState, typename OtherProvider, typename P = std::nullptr_t>
+    explicit ClassMetaBuilder(ClassMetaBuilder<OtherT, OtherState, OtherProvider>&& other, P&& provider = nullptr)
     : name_(std::move(other.name_)),
       staticProperty_(std::move(other.staticProperty_)),
       staticFunctions_(std::move(other.staticFunctions_)),
@@ -52,11 +81,12 @@ class ClassMetaBuilder {
       userDefinedConstructor_(std::move(other.userDefinedConstructor_)),
       constructors_(std::move(other.constructors_)),
       upcaster_(other.upcaster_),
-      extraCasters_(std::move(other.extraCasters_)) {
-        // note: other may be in moved-from state
+      extraCasters_(std::move(other.extraCasters_)),
+      instanceProvider_(makeProvider(std::move(other), std::forward<P>(provider))) {
+        // note: other is in moved-from state after construction
     }
 
-    template <typename, ConstructorKind>
+    template <typename, ConstructorKind, typename>
     friend class ClassMetaBuilder;
 
 public:
@@ -83,10 +113,33 @@ public:
 
     template <typename Fn>
     auto& func(std::string name, Fn&& fn, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic)
-        requires(!traits::isFunctionCallback_v<Fn>)
+        requires(!traits::isFunctionCallback_v<Fn> && !std::is_member_function_pointer_v<std::remove_cvref_t<Fn>>)
     {
         auto f = adapter::wrapFunction(std::forward<Fn>(fn), policy);
         staticFunctions_.emplace_back(std::move(name), std::move(f));
+        return *this;
+    }
+
+    /**
+     * @brief Binds an instance member function through an InstanceProvider (the member function
+     *        pointer is exposed as a static function).
+     * @note `.instanceProvider(...)` must be called first. The generated static function obtains the
+     *       instance from the provider on every call, so the script side neither needs nor can hold
+     *       an instance of that type.
+     */
+    template <typename Fn>
+    auto& func(std::string name, Fn&& fn, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic)
+        requires(std::is_member_function_pointer_v<std::remove_cvref_t<Fn>>)
+    {
+        static_assert(
+            hasInstanceProvider,
+            "Binding an instance method through .func() requires an InstanceProvider: "
+            "call .instanceProvider(...) first"
+        );
+        if constexpr (hasInstanceProvider) {
+            auto f = adapter::wrapInstanceProviderMethod(instanceProvider_, std::forward<Fn>(fn), policy);
+            staticFunctions_.emplace_back(std::move(name), std::move(f));
+        }
         return *this;
     }
 
@@ -94,9 +147,93 @@ public:
     auto& func(std::string name, Fn&&... fn)
         requires(sizeof...(Fn) > 1)
     {
-        auto f = adapter::wrapOverloadFuncAndExtraPolicy(std::forward<Fn>(fn)...);
-        staticFunctions_.emplace_back(std::move(name), std::move(f));
+        constexpr bool hasMember = (std::is_member_function_pointer_v<std::remove_cvref_t<Fn>> || ...);
+        constexpr bool allMemberOrPolicy =
+            ((std::is_member_function_pointer_v<std::remove_cvref_t<Fn>> || traits::is_policy<Fn>::value) && ...);
+
+        if constexpr (hasMember) {
+            static_assert(
+                allMemberOrPolicy,
+                "Cannot mix member function pointers with free functions in one .func() overload set"
+            );
+            static_assert(
+                hasInstanceProvider,
+                "Binding an instance method through .func() requires an InstanceProvider: "
+                "call .instanceProvider(...) first"
+            );
+            if constexpr (allMemberOrPolicy && hasInstanceProvider) {
+                auto f =
+                    adapter::wrapInstanceProviderOverloadAndExtraPolicy(instanceProvider_, std::forward<Fn>(fn)...);
+                staticFunctions_.emplace_back(std::move(name), std::move(f));
+            }
+        } else {
+            auto f = adapter::wrapOverloadFuncAndExtraPolicy(std::forward<Fn>(fn)...);
+            staticFunctions_.emplace_back(std::move(name), std::move(f));
+        }
         return *this;
+    }
+
+    /**
+     * @brief Registers an InstanceProvider for a static class.
+     *
+     * Intended for the case where C++ owns a singleton/manager but the script side should only see
+     * a set of static functions:
+     * ```cpp
+     * auto meta = defClass<void>("DataRegistry")
+     *     .instanceProvider([]() -> DataRegistry& { return DataRegistry::instance(); })
+     *     .func("fromName", &DataRegistry::fromName)
+     *     .build();
+     * ```
+     * Once configured, `.func` can bind instance member function pointers directly. jspp invokes
+     * the provider to obtain the instance on every call and then invokes the member function. The
+     * script side receives a plain object (static class); no instance wrapper is created and there
+     * is no InstancePayload to unwrap.
+     *
+     * @param provider A nullary callable returning T&, T const&, T*, or T const*; it runs on every
+     *        script call.
+     * @note The provider is stored inline by value (no heap allocation) and each `.func()` binding
+     *       captures its own copy. If the provider carries mutable state that must be shared across
+     *       methods, keep that state outside the provider or return a reference to it.
+     *
+     * @par Contract
+     * 1. The object returned by the provider must remain valid for the duration of each call.
+     * 2. jspp does not manage that object's lifetime. If it depends on engine-owned resources, the
+     *    host must guarantee the destruction order.
+     * 3. The provider produces no script object, so the provider itself takes no ReturnValuePolicy.
+     *
+     * @par Compile-time constraints
+     * - Only available on static classes (`defClass<void>`).
+     * - Can be configured only once.
+     * - The returned type must not derive from a trampoline.
+     * - The returned type must be convertible to the class of each bound member function (derived
+     *   instances may be bound to base methods); a const instance cannot be bound to a non-const
+     *   member function.
+     */
+    template <typename P>
+        requires(std::is_void_v<T> && !hasInstanceProvider)
+    auto instanceProvider(P&& provider) {
+        using ProviderType = std::decay_t<P>;
+
+        static_assert(
+            traits::BorrowingInstanceProvider<ProviderType>,
+            "InstanceProvider must be a nullary callable returning T&, T const&, T*, or T const*"
+        );
+        static_assert(
+            std::copy_constructible<ProviderType>,
+            "InstanceProvider must be copy constructible: each .func() binding captures its own copy"
+        );
+
+        if constexpr (traits::BorrowingInstanceProvider<ProviderType>) {
+            using ProviderTraits = traits::InstanceProviderTraits<ProviderType>;
+            if constexpr (requires { sizeof(typename ProviderTraits::Element); }) {
+                static_assert(
+                    !std::derived_from<typename ProviderTraits::Element, ::jspp::enable_trampoline>,
+                    "InstanceProvider must not return a type derived from jspp::enable_trampoline"
+                );
+            }
+        }
+
+        return ClassMetaBuilder<T, K, ProviderType>{std::move(*this), std::forward<P>(provider)};
     }
 
     auto& var(std::string name, GetterCallback getter, SetterCallback setter) {
@@ -486,7 +623,8 @@ public:
         return ModuleMetaBuilder<true>{std::move(*this)}; // NRVO/move
     }
     template <traits::Callable T>
-    [[nodiscard]] decltype(auto) export_default_as_func(T&& v, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic) {
+    [[nodiscard]] decltype(auto)
+    export_default_as_func(T&& v, ReturnValuePolicy policy = ReturnValuePolicy::kAutomatic) {
         static_assert(!ExportedByDefault, "Cannot export default twice");
         auto fn  = adapter::wrapFunction(std::forward<T>(v), policy);
         default_ = std::move(fn);
