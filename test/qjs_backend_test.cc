@@ -249,27 +249,49 @@ TEST_CASE_METHOD(QjsTestFixture, "Test QjsEngie::loadByteCode") {
     using namespace jspp;
     namespace fs = std::filesystem;
 
-    static constexpr std::string_view bytecode_file = "qjs_bytecode.bin";
+    static constexpr std::string_view source_file = "qjs_bytecode.js";
 
     EngineScope lock{engine.get()};
+    auto ctx = engine->context();
 
-    auto cwd = fs::current_path();
-
-    auto byteCodeFilePath = cwd / bytecode_file; // ./qjs_bytecode.bin
-    if (!fs::exists(byteCodeFilePath)) {
-        // in project root?
-        auto maybe = cwd / "test" / bytecode_file; // ./test/qjs_bytecode.bin
-        if (fs::exists(maybe)) {
-            byteCodeFilePath = maybe;
-        }
-
-        // in out dir or bin dir?
-        maybe = cwd.parent_path() / "test" / bytecode_file; // ./../test/qjs_bytecode.bin
-        if (fs::exists(maybe)) {
-            byteCodeFilePath = maybe;
-        }
-
+    // Locate the script source next to this test file
+    auto cwd  = fs::current_path();
+    auto path = cwd / source_file; // ./qjs_bytecode.js
+    if (!fs::exists(path)) {
+        path = cwd / "test" / source_file; // ./test/qjs_bytecode.js
     }
+    if (!fs::exists(path)) {
+        path = cwd.parent_path() / "test" / source_file; // ./../test/qjs_bytecode.js
+    }
+    REQUIRE(fs::exists(path));
+
+    // Bytecode is version-locked to the QuickJS build, so it is produced by the
+    // engine under test instead of being committed as a binary file.
+    std::ifstream in{path, std::ios::binary};
+    std::string   source{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+    REQUIRE_FALSE(source.empty());
+
+    auto fnValue = JS_Eval(
+        ctx,
+        source.data(),
+        source.size(),
+        source_file.data(),
+        JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY
+    );
+    REQUIRE_FALSE(JS_IsException(fnValue));
+
+    size_t   size = 0;
+    uint8_t* data = JS_WriteObject(ctx, &size, fnValue, JS_WRITE_OBJ_BYTECODE);
+    JS_FreeValue(ctx, fnValue);
+    REQUIRE(data != nullptr);
+
+    auto byteCodeFilePath = fs::temp_directory_path() / "jspp_bytecode_script.bin";
+    {
+        std::ofstream out{byteCodeFilePath, std::ios::binary};
+        REQUIRE(out.is_open());
+        out.write(reinterpret_cast<char const*>(data), static_cast<std::streamsize>(size));
+    }
+    js_free(ctx, data);
 
     bool done    = false;
     auto setDone = Function::newFunction(binding::cpp_func([&done](bool val) { done = val; }));

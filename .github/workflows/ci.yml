@@ -76,7 +76,7 @@ jobs:
         if: matrix.backend == 'quickjs'
         shell: bash
         run: |
-          git clone --depth 1 --branch v0.14.0 https://github.com/quickjs-ng/quickjs.git deps/quickjs-ng
+          git clone --depth 1 --branch v0.16.2 https://github.com/quickjs-ng/quickjs.git deps/quickjs-ng
 
       - name: Fetch V8
         if: matrix.backend == 'v8'

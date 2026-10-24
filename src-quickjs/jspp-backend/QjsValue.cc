@@ -270,6 +270,7 @@ Local<Value> Local<Promise>::result() const {
 }
 
 Local<Promise> Local<Promise>::then(Local<Function> const& onFulfilled, Local<Function> const& onRejected) const {
+#if QJS_VERSION_MAJOR > 0 || (QJS_VERSION_MAJOR == 0 && QJS_VERSION_MINOR >= 16)
     auto ctx = qjs_backend::QjsHelper::currentContextChecked();
     auto ret = JS_PromiseThen(
         ctx,
@@ -280,22 +281,56 @@ Local<Promise> Local<Promise>::then(Local<Function> const& onFulfilled, Local<Fu
     qjs_backend::QjsHelper::rethrowException(ret);
     EngineScope::currentEngineChecked().pumpPendingJobs();
     return ValueHelper::wrap<Promise>(ret);
+#else
+    // Compatibility fallback for QuickJS-NG < 0.16.0.
+    // WARNING: This path is NOT semantically equivalent to JS_PromiseThen.
+    // Calling Promise.prototype.then may be affected by user overrides
+    // and Symbol.species, potentially diverging from PerformPromiseThen.
+    // Prefer QuickJS-NG >= 0.16.0 for native semantics.
+    // See: https://github.com/quickjs-ng/quickjs/pull/1605
+    //
+    // TODO: Remove this fallback once the minimum supported QuickJS-NG
+    // version is raised to >= 0.16.0.
+    auto thenFn = asValue().asObject().get(String::newString("then")).asFunction();
+    auto result = thenFn.call(asValue(), {onFulfilled.asValue(), onRejected.asValue()});
+    return result.as<Promise>();
+#endif
 }
 
 Local<Promise> Local<Promise>::then(Local<Function> const& onFulfilled) const {
+#if QJS_VERSION_MAJOR > 0 || (QJS_VERSION_MAJOR == 0 && QJS_VERSION_MINOR >= 16)
     auto ctx = qjs_backend::QjsHelper::currentContextChecked();
     auto ret = JS_PromiseThen(ctx, val, qjs_backend::QjsHelper::peekValue(onFulfilled), JS_UNDEFINED);
     qjs_backend::QjsHelper::rethrowException(ret);
     EngineScope::currentEngineChecked().pumpPendingJobs();
     return ValueHelper::wrap<Promise>(ret);
+#else
+    // Compatibility fallback for QuickJS-NG < 0.16.0 — see the full warning
+    // on then(onFulfilled, onRejected) above.
+    // TODO: Remove this fallback once the minimum supported QuickJS-NG
+    // version is raised to >= 0.16.0.
+    auto thenFn = asValue().asObject().get(String::newString("then")).asFunction();
+    auto result = thenFn.call(asValue(), {onFulfilled.asValue(), Undefined::newUndefined()});
+    return result.as<Promise>();
+#endif
 }
 
 Local<Promise> Local<Promise>::catchError(Local<Function> const& onRejected) const {
+#if QJS_VERSION_MAJOR > 0 || (QJS_VERSION_MAJOR == 0 && QJS_VERSION_MINOR >= 16)
     auto ctx = qjs_backend::QjsHelper::currentContextChecked();
     auto ret = JS_PromiseThen(ctx, val, JS_UNDEFINED, qjs_backend::QjsHelper::peekValue(onRejected));
     qjs_backend::QjsHelper::rethrowException(ret);
     EngineScope::currentEngineChecked().pumpPendingJobs();
     return ValueHelper::wrap<Promise>(ret);
+#else
+    // Compatibility fallback for QuickJS-NG < 0.16.0 — see the full warning
+    // on then(onFulfilled, onRejected) above.
+    // TODO: Remove this fallback once the minimum supported QuickJS-NG
+    // version is raised to >= 0.16.0.
+    auto catchFn = asValue().asObject().get(String::newString("catch")).asFunction();
+    auto result  = catchFn.call(asValue(), {onRejected.asValue()});
+    return result.as<Promise>();
+#endif
 }
 
 
