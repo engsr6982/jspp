@@ -28,6 +28,7 @@ bool Local<Value>::isFunction() const {
     auto ctx = qjs_backend::QjsHelper::currentContextChecked();
     return !JS_IsUninitialized(val) && JS_IsFunction(ctx, val);
 }
+bool Local<Value>::isPromise() const { return !JS_IsUninitialized(val) && JS_IsPromise(val); }
 
 
 Local<Value> Local<Value>::asValue() const { return *this; }
@@ -70,6 +71,10 @@ Local<Array> Local<Value>::asArray() const {
 Local<Function> Local<Value>::asFunction() const {
     if (isFunction()) return Local<Function>{qjs_backend::QjsHelper::dupValue(val)};
     throw Exception("cannot convert to Function");
+}
+Local<Promise> Local<Value>::asPromise() const {
+    if (isPromise()) return Local<Promise>{qjs_backend::QjsHelper::dupValue(val)};
+    throw Exception("cannot convert to Promise");
 }
 
 void Local<Value>::clear() {
@@ -438,6 +443,11 @@ Local<Value> Local<Function>::callAsConstructor(std::span<const Local<Value>> ar
 }
 
 
+IMPL_SPECIALIZATION_LOCAL(Promise);
+IMPL_SPECALIZATION_AS_VALUE(Promise);
+IMPL_DECL_BACKEND_IMPL_TYPE(Promise);
+
+
 #undef IMPL_SPECALIZATION_LOCAL
 #undef IMPL_SPECALIZATION_AS_VALUE
 #undef IMPL_DECL_BACKEND_IMPL_TYPE
@@ -460,6 +470,7 @@ EXPLICIT_INSTANTIATE_REF(Symbol)
 EXPLICIT_INSTANTIATE_REF(Object)
 EXPLICIT_INSTANTIATE_REF(Array)
 EXPLICIT_INSTANTIATE_REF(Function)
+EXPLICIT_INSTANTIATE_REF(Promise)
 #undef EXPLICIT_INSTANTIATE_REF
 
 } // namespace jspp

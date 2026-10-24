@@ -32,6 +32,8 @@ Local<T> Local<Value>::as() const {
         return asObject();
     } else if constexpr (std::is_same_v<T, Array>) {
         return asArray();
+    } else if constexpr (std::is_same_v<T, Promise>) {
+        return asPromise();
     }
     [[unlikely]] throw std::logic_error("Unable to convert Local<Value> to T, forgot to add if branch?");
 }

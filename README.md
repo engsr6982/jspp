@@ -133,6 +133,7 @@ Like pybind11, jspp provides fine-grained lifetime control when passing complex 
 | `Local<Function>`  | `Local<Function>`  | `JSValue`    | `Function`  |
 | `Local<Object>`    | `Local<Object>`    | `JSValue`    | `Object`    |
 | `Local<Array>`     | `Local<Array>`     | `JSValue`    | `Array`     |
+| `Local<Promise>`   | `Local<Promise>`   | `JSValue`    | `Promise`   |
 | `Global<T>`        | `Global<T>`        | `JSValue`    | `T`         |
 | `Weak<T>`          | `Weak<T>`          | `JSValue`    | `T`         |
 

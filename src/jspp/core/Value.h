@@ -23,6 +23,7 @@ enum class ValueKind : uint8_t {
     kObject,
     kArray,
     kFunction,
+    kPromise,
 };
 
 class Value {
@@ -102,6 +103,24 @@ class Array : public Value {
 public:
     Array() = delete;
     [[nodiscard]] static Local<Array> newArray(size_t length = 0);
+};
+
+class Promise : public Value {
+public:
+    Promise() = delete;
+
+    /**
+     * @brief Create a new promise resolved with value.
+     * @note  Always returns a new promise. A thenable value is adopted
+     *        asynchronously per ECMA resolution semantics; this is not the
+     *        Promise.resolve identity shortcut.
+     */
+    [[nodiscard]] static Local<Promise> resolved(Local<Value> const& value);
+
+    /**
+     * @brief Create an already rejected promise.
+     */
+    [[nodiscard]] static Local<Promise> rejected(Local<Value> const& reason);
 };
 
 class Engine; // forward declaration

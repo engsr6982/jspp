@@ -78,6 +78,7 @@ public:
     [[nodiscard]] bool isObject() const;
     [[nodiscard]] bool isArray() const;
     [[nodiscard]] bool isFunction() const;
+    [[nodiscard]] bool isPromise() const;
 
     [[nodiscard]] Local<Value>     asValue() const;
     [[nodiscard]] Local<Null>      asNull() const;
@@ -90,6 +91,7 @@ public:
     [[nodiscard]] Local<Object>    asObject() const;
     [[nodiscard]] Local<Array>     asArray() const;
     [[nodiscard]] Local<Function>  asFunction() const;
+    [[nodiscard]] Local<Promise>   asPromise() const;
 
     /**
      * @tparam T must be the type of as described above
@@ -252,6 +254,30 @@ public:
     [[nodiscard]] Local<Value> callAsConstructor(std::span<const Local<Value>> args) const;
 
     [[nodiscard]] Local<Value> callAsConstructor(std::initializer_list<Local<Value>> args) const;
+};
+
+template <>
+class Local<Promise> {
+    SPECIALIZATION_LOCAL(Promise);
+    SPECALIZATION_AS_VALUE(Promise);
+    DECL_BACKEND_IMPL_TYPE(Promise);
+
+public:
+    [[nodiscard]] PromiseState state() const;
+
+    /**
+     * @brief Get the fulfillment value or rejection reason.
+     * @note  Throws if the promise is still pending.
+     */
+    [[nodiscard]] Local<Value> result() const;
+
+    /** JavaScript: Promise.prototype.then (native engine API per backend) */
+    [[nodiscard]] Local<Promise> then(Local<Function> const& onFulfilled, Local<Function> const& onRejected) const;
+
+    [[nodiscard]] Local<Promise> then(Local<Function> const& onFulfilled) const;
+
+    /** JavaScript: Promise.prototype.catch */
+    [[nodiscard]] Local<Promise> catchError(Local<Function> const& onRejected) const;
 };
 
 #undef SPECIALIZATION_LOCAL

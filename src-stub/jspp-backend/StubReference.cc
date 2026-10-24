@@ -53,6 +53,10 @@ bool Local<Value>::isFunction() const {
     // TODO: implement this
     return false;
 }
+bool Local<Value>::isPromise() const {
+    // TODO: implement this
+    return false;
+}
 
 
 Local<Value> Local<Value>::asValue() const { return *this; }
@@ -95,6 +99,10 @@ Local<Array> Local<Value>::asArray() const {
 Local<Function> Local<Value>::asFunction() const {
     if (isFunction()) throw Exception{"Not Implemented"}; // TODO: implement this
     throw Exception("cannot convert to Function");
+}
+Local<Promise> Local<Value>::asPromise() const {
+    if (isPromise()) throw Exception{"Not Implemented"}; // TODO: implement this
+    throw Exception("cannot convert to Promise");
 }
 
 void Local<Value>::clear() {
@@ -318,6 +326,11 @@ Local<Value> Local<Function>::callAsConstructor(std::span<const Local<Value>> ar
 }
 
 
+IMPL_SPECIALIZATION_LOCAL(Promise);
+IMPL_SPECALIZATION_AS_VALUE(Promise);
+IMPL_DECL_BACKEND_IMPL_TYPE(Promise);
+
+
 #undef IMPL_SPECALIZATION_LOCAL
 #undef IMPL_SPECALIZATION_AS_VALUE
 #undef IMPL_DECL_BACKEND_IMPL_TYPE
@@ -340,6 +353,7 @@ EXPLICIT_INSTANTIATE_REF(Symbol)
 EXPLICIT_INSTANTIATE_REF(Object)
 EXPLICIT_INSTANTIATE_REF(Array)
 EXPLICIT_INSTANTIATE_REF(Function)
+EXPLICIT_INSTANTIATE_REF(Promise)
 #undef EXPLICIT_INSTANTIATE_REF
 
 } // namespace jspp

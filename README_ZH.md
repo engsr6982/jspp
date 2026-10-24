@@ -132,6 +132,7 @@ int main() {
 | `Local<Function>`  | `Local<Function>`  | `JSValue`    | `Function`  |
 | `Local<Object>`    | `Local<Object>`    | `JSValue`    | `Object`    |
 | `Local<Array>`     | `Local<Array>`     | `JSValue`    | `Array`     |
+| `Local<Promise>`   | `Local<Promise>`   | `JSValue`    | `Promise`   |
 | `Global<T>`        | `Global<T>`        | `JSValue`    | `T`         |
 | `Weak<T>`          | `Weak<T>`          | `JSValue`    | `T`         |
 

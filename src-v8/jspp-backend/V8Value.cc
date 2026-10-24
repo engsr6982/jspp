@@ -2,6 +2,7 @@
 #include "jspp/core/Engine.h"
 #include "jspp/core/EngineScope.h"
 #include "jspp/core/Exception.h"
+#include "jspp/core/PromiseResolver.h"
 #include "jspp/core/Reference.h"
 #include "jspp/core/Value.h"
 #include "jspp/core/ValueHelper.h"
@@ -18,6 +19,7 @@ JSPP_WARNING_GUARD_BEGIN
 #include <v8-function-callback.h>
 #include <v8-local-handle.h>
 #include <v8-primitive.h>
+#include <v8-promise.h>
 #include <v8-template.h>
 #include <v8-value.h>
 JSPP_WARNING_GUARD_END
@@ -156,6 +158,115 @@ Local<Object> Object::newObject() {
 Local<Array> Array::newArray(size_t length) {
     auto isolate = v8_backend::V8Helper::currentIsolateChecked();
     return Local<Array>{v8::Array::New(isolate, static_cast<int>(length))};
+}
+
+
+PromiseResolver PromiseResolver::newResolver() {
+    auto&& [isolate, ctx] = v8_backend::V8Helper::currentIsolateContextChecked();
+
+    v8::TryCatch vtry{isolate};
+    auto         maybe = v8::Promise::Resolver::New(ctx);
+    if (maybe.IsEmpty()) {
+        v8_backend::V8Helper::rethrowException(vtry);
+    }
+    auto resolver = maybe.ToLocalChecked();
+
+    PromiseResolver result;
+    result.impl_.promise_.reset(ValueHelper::wrap<Promise>(resolver->GetPromise()));
+    return result;
+}
+
+bool PromiseResolver::isEmpty() const noexcept { return impl_.promise_.isEmpty(); }
+
+void PromiseResolver::reset() { impl_.promise_.reset(); }
+
+Local<Promise> PromiseResolver::promise() const {
+    if (isEmpty()) {
+        throw Exception{"PromiseResolver::promise(): resolver is empty"};
+    }
+    return impl_.promise_.get();
+}
+
+void PromiseResolver::resolve(Local<Value> const& value) const {
+    if (isEmpty()) {
+        throw Exception{"PromiseResolver::resolve(): resolver is empty"};
+    }
+    auto         engine = impl_.promise_.engine();
+    v8::TryCatch vtry{engine->isolate()};
+    // The resolver wraps the same object as the promise; casting back is the
+    // established pattern (see V8Engine.cc HostImportModuleDynamicallyCallback).
+    auto resolver = ValueHelper::unwrap(impl_.promise_.get()).As<v8::Promise::Resolver>();
+    auto maybe    = resolver->Resolve(engine->context(), ValueHelper::unwrap(value));
+    if (maybe.IsNothing()) {
+        v8_backend::V8Helper::rethrowException(vtry);
+    }
+}
+
+void PromiseResolver::reject(Local<Value> const& reason) const {
+    if (isEmpty()) {
+        throw Exception{"PromiseResolver::reject(): resolver is empty"};
+    }
+    auto         engine = impl_.promise_.engine();
+    v8::TryCatch vtry{engine->isolate()};
+    auto         resolver = ValueHelper::unwrap(impl_.promise_.get()).As<v8::Promise::Resolver>();
+    auto         maybe    = resolver->Reject(engine->context(), ValueHelper::unwrap(reason));
+    if (maybe.IsNothing()) {
+        v8_backend::V8Helper::rethrowException(vtry);
+    }
+}
+
+PromiseState Local<Promise>::state() const {
+    switch (val->State()) {
+    case v8::Promise::kPending:
+        return PromiseState::kPending;
+    case v8::Promise::kFulfilled:
+        return PromiseState::kFulfilled;
+    case v8::Promise::kRejected:
+        return PromiseState::kRejected;
+    }
+    [[unlikely]] throw Exception{"Local<Promise>::state(): unknown promise state"};
+}
+
+Local<Value> Local<Promise>::result() const {
+    if (val->State() == v8::Promise::kPending) {
+        throw Exception{"Local<Promise>::result(): promise is pending"};
+    }
+    return Local<Value>{val->Result()};
+}
+
+Local<Promise> Local<Promise>::then(Local<Function> const& onFulfilled, Local<Function> const& onRejected) const {
+    auto&& [isolate, ctx] = v8_backend::V8Helper::currentIsolateContextChecked();
+
+    v8::TryCatch vtry{isolate};
+    auto         maybe = val->Then(ctx, ValueHelper::unwrap(onFulfilled), ValueHelper::unwrap(onRejected));
+    if (maybe.IsEmpty()) {
+        v8_backend::V8Helper::rethrowException(vtry);
+    }
+    return ValueHelper::wrap<Promise>(maybe.ToLocalChecked());
+}
+
+Local<Promise> Local<Promise>::then(Local<Function> const& onFulfilled) const {
+    auto&& [isolate, ctx] = v8_backend::V8Helper::currentIsolateContextChecked();
+
+    v8::TryCatch vtry{isolate};
+    // Native single-handler overload; the two-argument Then does not accept
+    // empty handles for absent handlers.
+    auto maybe = val->Then(ctx, ValueHelper::unwrap(onFulfilled));
+    if (maybe.IsEmpty()) {
+        v8_backend::V8Helper::rethrowException(vtry);
+    }
+    return ValueHelper::wrap<Promise>(maybe.ToLocalChecked());
+}
+
+Local<Promise> Local<Promise>::catchError(Local<Function> const& onRejected) const {
+    auto&& [isolate, ctx] = v8_backend::V8Helper::currentIsolateContextChecked();
+
+    v8::TryCatch vtry{isolate};
+    auto         maybe = val->Catch(ctx, ValueHelper::unwrap(onRejected));
+    if (maybe.IsEmpty()) {
+        v8_backend::V8Helper::rethrowException(vtry);
+    }
+    return ValueHelper::wrap<Promise>(maybe.ToLocalChecked());
 }
 
 

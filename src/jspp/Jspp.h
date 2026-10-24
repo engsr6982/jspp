@@ -4,6 +4,7 @@
 #include "core/Engine.h"
 #include "core/EngineScope.h"
 #include "core/Exception.h"
+#include "core/PromiseResolver.h"
 #include "core/Reference.h"
 #include "core/Trampoline.h"
 

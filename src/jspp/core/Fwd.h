@@ -24,8 +24,11 @@ class Symbol;
 class Function;
 class Object;
 class Array;
+class Promise;
 
 class Arguments;
+
+class PromiseResolver;
 
 // handle
 
@@ -55,6 +58,13 @@ enum class ExceptionType {
     TypeError
 };
 
+
+// promise
+enum class PromiseState : uint8_t {
+    kPending = 0,
+    kFulfilled,
+    kRejected
+};
 
 // attribute
 enum class PropertyAttribute : uint32_t {

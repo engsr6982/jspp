@@ -5,8 +5,10 @@
 #include "jspp/core/EngineScope.h"
 #include "jspp/core/Exception.h"
 #include "jspp/core/Fwd.h"
+#include "jspp/core/PromiseResolver.h"
 #include "jspp/core/Reference.h"
 #include "jspp/core/Value.h"
+#include "jspp/core/ValueHelper.h"
 
 #include <array>
 #include <cassert>
@@ -192,6 +194,108 @@ Local<Array> Array::newArray(size_t length) {
         }
     }
     return Local<Array>{array};
+}
+
+
+PromiseResolver PromiseResolver::newResolver() {
+    auto ctx = qjs_backend::QjsHelper::currentContextChecked();
+
+    JSValue funcs[2]{};
+    auto   promise = JS_NewPromiseCapability(ctx, funcs);
+    qjs_backend::QjsHelper::rethrowException(promise);
+
+    PromiseResolver resolver;
+    {
+        auto local = ValueHelper::wrap<Promise>(promise); // takes ownership of the new reference
+        resolver.impl_.promise_.reset(local);             // Global::reset duplicates internally
+    }
+    {
+        auto local = ValueHelper::wrap<Function>(funcs[0]);
+        resolver.impl_.resolve_.reset(local);
+    }
+    {
+        auto local = ValueHelper::wrap<Function>(funcs[1]);
+        resolver.impl_.reject_.reset(local);
+    }
+    return resolver;
+}
+
+bool PromiseResolver::isEmpty() const noexcept { return impl_.promise_.isEmpty(); }
+
+void PromiseResolver::reset() {
+    impl_.resolve_.reset();
+    impl_.reject_.reset();
+    impl_.promise_.reset();
+}
+
+Local<Promise> PromiseResolver::promise() const {
+    if (isEmpty()) {
+        throw Exception{"PromiseResolver::promise(): resolver is empty"};
+    }
+    return impl_.promise_.get();
+}
+
+void PromiseResolver::resolve(Local<Value> const& value) const {
+    if (isEmpty()) {
+        throw Exception{"PromiseResolver::resolve(): resolver is empty"};
+    }
+    // Calling the capability function gives exact ECMA semantics for free:
+    // alreadyResolved idempotence, thenable adoption and rejection tracking.
+    (void)impl_.resolve_.get().call(Local<Value>{}, {value});
+}
+
+void PromiseResolver::reject(Local<Value> const& reason) const {
+    if (isEmpty()) {
+        throw Exception{"PromiseResolver::reject(): resolver is empty"};
+    }
+    (void)impl_.reject_.get().call(Local<Value>{}, {reason});
+}
+
+PromiseState Local<Promise>::state() const {
+    auto ctx = qjs_backend::QjsHelper::currentContextChecked();
+    switch (JS_PromiseState(ctx, val)) {
+        case JS_PROMISE_PENDING: return PromiseState::kPending;
+        case JS_PROMISE_FULFILLED: return PromiseState::kFulfilled;
+        case JS_PROMISE_REJECTED: return PromiseState::kRejected;
+        default: [[unlikely]] throw Exception{"Local<Promise>::state(): value is not a promise"};
+    }
+}
+
+Local<Value> Local<Promise>::result() const {
+    auto ctx = qjs_backend::QjsHelper::currentContextChecked();
+    if (JS_PromiseState(ctx, val) == JS_PROMISE_PENDING) {
+        throw Exception{"Local<Promise>::result(): promise is pending"};
+    }
+    return Local<Value>{JS_PromiseResult(ctx, val)}; // returns a new reference
+}
+
+Local<Promise> Local<Promise>::then(Local<Function> const& onFulfilled, Local<Function> const& onRejected) const {
+    auto ctx = qjs_backend::QjsHelper::currentContextChecked();
+    auto ret = JS_PromiseThen(
+        ctx,
+        val,
+        qjs_backend::QjsHelper::peekValue(onFulfilled),
+        qjs_backend::QjsHelper::peekValue(onRejected)
+    );
+    qjs_backend::QjsHelper::rethrowException(ret);
+    EngineScope::currentEngineChecked().pumpPendingJobs();
+    return ValueHelper::wrap<Promise>(ret);
+}
+
+Local<Promise> Local<Promise>::then(Local<Function> const& onFulfilled) const {
+    auto ctx = qjs_backend::QjsHelper::currentContextChecked();
+    auto ret = JS_PromiseThen(ctx, val, qjs_backend::QjsHelper::peekValue(onFulfilled), JS_UNDEFINED);
+    qjs_backend::QjsHelper::rethrowException(ret);
+    EngineScope::currentEngineChecked().pumpPendingJobs();
+    return ValueHelper::wrap<Promise>(ret);
+}
+
+Local<Promise> Local<Promise>::catchError(Local<Function> const& onRejected) const {
+    auto ctx = qjs_backend::QjsHelper::currentContextChecked();
+    auto ret = JS_PromiseThen(ctx, val, JS_UNDEFINED, qjs_backend::QjsHelper::peekValue(onRejected));
+    qjs_backend::QjsHelper::rethrowException(ret);
+    EngineScope::currentEngineChecked().pumpPendingJobs();
+    return ValueHelper::wrap<Promise>(ret);
 }
 
 

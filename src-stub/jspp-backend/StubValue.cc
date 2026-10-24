@@ -2,6 +2,7 @@
 #include "jspp/core/Engine.h"
 #include "jspp/core/EngineScope.h"
 #include "jspp/core/Exception.h"
+#include "jspp/core/PromiseResolver.h"
 #include "jspp/core/Reference.h"
 #include "jspp/core/Value.h"
 #include "jspp/core/ValueHelper.h"
@@ -98,6 +99,61 @@ Local<Object> Object::newObject() {
 
 
 Local<Array> Array::newArray(size_t length) {
+    // TODO: please implement this
+    throw Exception{"Not implemented"};
+}
+
+
+PromiseResolver PromiseResolver::newResolver() {
+    // TODO: please implement this
+    throw Exception{"Not implemented"};
+}
+
+bool PromiseResolver::isEmpty() const noexcept {
+    // TODO: please implement this
+    return true;
+}
+
+void PromiseResolver::reset() {
+    // TODO: please implement this
+}
+
+Local<Promise> PromiseResolver::promise() const {
+    // TODO: please implement this
+    throw Exception{"Not implemented"};
+}
+
+void PromiseResolver::resolve(Local<Value> const& value) const {
+    // TODO: please implement this
+    throw Exception{"Not implemented"};
+}
+
+void PromiseResolver::reject(Local<Value> const& reason) const {
+    // TODO: please implement this
+    throw Exception{"Not implemented"};
+}
+
+PromiseState Local<Promise>::state() const {
+    // TODO: please implement this
+    throw Exception{"Not implemented"};
+}
+
+Local<Value> Local<Promise>::result() const {
+    // TODO: please implement this
+    throw Exception{"Not implemented"};
+}
+
+Local<Promise> Local<Promise>::then(Local<Function> const& onFulfilled, Local<Function> const& onRejected) const {
+    // TODO: please implement this
+    throw Exception{"Not implemented"};
+}
+
+Local<Promise> Local<Promise>::then(Local<Function> const& onFulfilled) const {
+    // TODO: please implement this
+    throw Exception{"Not implemented"};
+}
+
+Local<Promise> Local<Promise>::catchError(Local<Function> const& onRejected) const {
     // TODO: please implement this
     throw Exception{"Not implemented"};
 }
