@@ -399,8 +399,23 @@ char* QjsModuleLoader::normalize(
     }
 
     if (!std::filesystem::is_regular_file(final_path)) {
-        JS_ThrowPlainError(ctx, "module not found: %s", final_path.string().c_str());
-        return nullptr;
+        // Bytecode deployment fallback (non-standard, opt-in via EnableBytecodeImport):
+        // scripts ship only as quickjs bytecode (.bin) while import specifiers keep the
+        // ".js" extension — resolve to the sibling .bin.
+        auto resolved = false;
+        if (hasFlag(engine->flags_, QjsInitializeFlags::EnableBytecodeImport)
+            && final_path.extension() == ".js") {
+            auto binPath = final_path;
+            binPath.replace_extension(".bin");
+            if (std::filesystem::is_regular_file(binPath)) {
+                final_path = std::move(binPath);
+                resolved   = true;
+            }
+        }
+        if (!resolved) {
+            JS_ThrowPlainError(ctx, "module not found: %s", final_path.string().c_str());
+            return nullptr;
+        }
     }
 
     std::string gen_path  = final_path.generic_string();
@@ -564,6 +579,10 @@ QjsModuleLoader::performLoadJsonModule(Engine* engine, std::filesystem::path con
 }
 JSModuleDef*
 QjsModuleLoader::performLoadByteCodeModule(Engine* engine, std::filesystem::path const& path, const char* specifier) {
+    if (!hasFlag(engine->flags_, QjsInitializeFlags::EnableBytecodeImport)) {
+        JS_ThrowPlainError(engine->context_, "bytecode import is disabled");
+        return nullptr;
+    }
     auto ifs = std::ifstream{path, std::ios::binary};
     if (!ifs) [[unlikely]] {
         JS_ThrowPlainError(engine->context_, "module not found: %s", path.string().c_str());

@@ -54,6 +54,15 @@ enum class QjsInitializeFlags {
     /** @brief Disable automatic garbage collection in QjsEngine::dispose */
     NoGcInDispose = 1 << 5,
 
+    /**
+     * @brief Enable quickjs bytecode (.bin) module imports:
+     *        - import specifiers ending in ".bin" are loaded as bytecode modules;
+     *        - when a specifier resolves to a missing ".js" file, the loader falls
+     *          back to the sibling ".bin" file (bytecode deployments).
+     * @note if set NoModuleLoader, this flag will be ignored.
+     */
+    EnableBytecodeImport = 1 << 6,
+
     /** @brief Combination for safe embedding in existing QuickJS environments. */
     AddonMode = NoModuleLoader | NoFreeRuntime | NoFreeContext | NoJobQueuePosting | NoGcInDispose
 };

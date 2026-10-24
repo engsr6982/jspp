@@ -333,5 +333,77 @@ TEST_CASE_METHOD(QjsTestFixture, "Test QjsEngie::loadByteCodeNamespace") {
     REQUIRE(inst.asObject().get(String::newString("ping")).asFunction().call(inst).asString().getValue() == "pong");
 }
 
+TEST_CASE_METHOD(QjsTestFixture, "Test module loader js-to-bin fallback (bytecode deployment)") {
+    using namespace jspp;
+    namespace fs = std::filesystem;
+
+    EngineScope lock{engine.get()};
+    auto ctx = engine->context();
+
+    // Bytecode deployment: only .bin files are shipped while import specifiers
+    // keep the ".js" extension (qjsc/tsc pipeline layout).
+    auto dir = fs::temp_directory_path() / "jspp_test_bin_fallback";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+
+    // compile dep.js -> dep.bin (same format qjsc emits), then drop the source
+    auto depSource = std::string{"export const NAME = 'from-bytecode';"};
+    auto modValue  = JS_Eval(
+        ctx,
+        depSource.data(),
+        depSource.size(),
+        "dep.js",
+        JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY
+    );
+    REQUIRE_FALSE(JS_IsException(modValue));
+    size_t   size = 0;
+    uint8_t* data = JS_WriteObject(ctx, &size, modValue, JS_WRITE_OBJ_BYTECODE);
+    JS_FreeValue(ctx, modValue);
+    REQUIRE(data != nullptr);
+    {
+        std::ofstream out(dir / "dep.bin", std::ios::binary);
+        out.write(reinterpret_cast<char const*>(data), static_cast<std::streamsize>(size));
+    }
+    js_free(ctx, data);
+
+    {
+        std::ofstream out(dir / "index.js");
+        out << "import { NAME } from './dep.js';\nexport default 'ns:' + NAME;\n";
+    }
+    {
+        std::ofstream out(dir / "explicit.js");
+        out << "import { NAME } from './dep.bin';\nexport default 'ns:' + NAME;\n";
+    }
+
+    // flag off (default): neither the ".js -> .bin" fallback nor explicit ".bin" imports work
+    REQUIRE_THROWS_AS(engine->loadModule(dir / "index.js"), jspp::Exception);
+    REQUIRE_THROWS_AS(engine->loadModule(dir / "explicit.js"), jspp::Exception);
+
+    // flag on (constructor): fallback resolves './dep.js' to the sibling dep.bin,
+    // and explicit '.bin' specifiers load bytecode modules directly.
+    {
+        auto engineWithFlag = std::make_unique<jspp::Engine>(
+            static_cast<qjs_backend::QjsEngine::JSRuntimeFactory>(nullptr),
+            qjs_backend::QjsInitializeFlags::EnableBytecodeImport
+        );
+        EngineScope flagScope{engineWithFlag.get()};
+
+        auto ns = engineWithFlag->loadModule(dir / "index.js");
+        REQUIRE(ns.get(String::newString("default")).asString().getValue() == "ns:from-bytecode");
+
+        auto ns2 = engineWithFlag->loadModule(dir / "explicit.js");
+        REQUIRE(ns2.get(String::newString("default")).asString().getValue() == "ns:from-bytecode");
+
+        // no .js and no .bin sibling -> still module not found
+        {
+            std::ofstream out(dir / "bad.js");
+            out << "import { X } from './missing.js';\nexport default X;\n";
+        }
+        REQUIRE_THROWS_AS(engineWithFlag->loadModule(dir / "bad.js"), jspp::Exception);
+    }
+
+    fs::remove_all(dir);
+}
+
 
 #endif
