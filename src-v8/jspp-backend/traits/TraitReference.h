@@ -9,6 +9,7 @@ JSPP_WARNING_GUARD_BEGIN
 #include <v8-object.h>
 #include <v8-primitive.h>
 #include <v8-promise.h>
+#include <v8-proxy.h>
 #include <v8-value.h>
 JSPP_WARNING_GUARD_END
 
@@ -43,6 +44,7 @@ TYPE_ALIAS(Function, v8::Function);
 TYPE_ALIAS(Object, v8::Object);
 TYPE_ALIAS(Array, v8::Array);
 TYPE_ALIAS(Promise, v8::Promise);
+TYPE_ALIAS(Proxy, v8::Proxy);
 
 #undef TYPE_ALIAS
 

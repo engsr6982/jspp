@@ -333,7 +333,7 @@ V8ModuleLoader::SyntheticModuleEvaluationSteps(v8::Local<v8::Context> context, v
     auto engine  = static_cast<Engine*>(context->GetAlignedPointerFromEmbedderData(kEngineContextEmbedderDataIndex));
 
     ModuleMeta const* meta = nullptr;
-    int hash = module->GetIdentityHash();
+    int               hash = module->GetIdentityHash();
     if (auto it = engine->syntheticModules_.find(hash); it != engine->syntheticModules_.end()) {
         meta = it->second;
     }
@@ -721,7 +721,7 @@ std::string normalizeModuleSource(v8::Isolate* isolate, v8::Local<v8::String>& s
             sourceStr            = "file://";
             if (!gen_path.starts_with("/")) sourceStr += "/";
             sourceStr += gen_path;
-            source      = v8::String::NewFromUtf8(isolate, sourceStr.c_str()).ToLocalChecked();
+            source     = v8::String::NewFromUtf8(isolate, sourceStr.c_str()).ToLocalChecked();
         }
     }
     return sourceStr;
@@ -753,8 +753,8 @@ Local<Object> Engine::evalModuleNamespace(Local<String> const& code, Local<Strin
 }
 
 v8::Local<v8::Module> v8_backend::V8Engine::performEvalModule(
-    v8::Local<v8::String>  code,
-    v8::Local<v8::String>  source,
+    v8::Local<v8::String> code,
+    v8::Local<v8::String> source,
     v8::Local<v8::Value>& outResult
 ) {
     auto         isolate = isolate_;
@@ -897,9 +897,40 @@ bool Engine::isInstanceOf(Local<Object> const& obj, ClassMeta const& meta) const
     if (iter == classConstructors_.end()) {
         return false;
     }
-    auto ctor = iter->second.Get(isolate_);
-    return ctor->HasInstance(ValueHelper::unwrap(obj));
+
+    auto         ctx = context_.Get(isolate_);
+    v8::TryCatch vtry{isolate_};
+    auto         fn = iter->second.Get(isolate_)->GetFunction(ctx);
+    if (fn.IsEmpty()) {
+        return false;
+    }
+    // ECMA `instanceof` semantics, identical to script-side
+    // `obj instanceof C`: honors Symbol.hasInstance and proxy prototype
+    // traps, matching the QuickJS backend (JS_IsInstanceOf). May run user JS;
+    // trap exceptions propagate as jspp::Exception.
+    // v8::Value::InstanceOf evaluates `this instanceof object`, so the probe
+    // object is the receiver and the constructor the right-hand side.
+    auto maybe = ValueHelper::unwrap(obj)->InstanceOf(ctx, fn.ToLocalChecked());
+    if (maybe.IsNothing()) {
+        v8_backend::V8Helper::rethrowException(vtry);
+    }
+    return maybe.FromJust();
 }
+
+namespace v8_backend {
+/**
+ * @brief Ownership holder for NativeInstance transfers between
+ *        Engine::newInstance() and the constructor callback. Stack allocated
+ *        by the caller: NewInstance runs the callback synchronously, so the
+ *        holder outlives the transfer; if construction fails before the
+ *        callback adopts the instance, scope exit destroys it.
+ */
+struct NativeInstanceTransfer {
+    explicit NativeInstanceTransfer(std::unique_ptr<jspp::NativeInstance>&& inst) : instance(std::move(inst)) {}
+
+    std::unique_ptr<jspp::NativeInstance> instance;
+};
+} // namespace v8_backend
 
 Local<Object> Engine::newInstance(ClassMeta const& meta, std::unique_ptr<NativeInstance>&& instance) {
     auto iter = classConstructors_.find(&meta);
@@ -915,27 +946,50 @@ Local<Object> Engine::newInstance(ClassMeta const& meta, std::unique_ptr<NativeI
     auto ctor = iter->second.Get(isolate_)->GetFunction(ctx);
     v8_backend::V8Helper::rethrowException(vtry);
 
-    // (symbol, instance)
+    v8_backend::NativeInstanceTransfer holder{std::move(instance)};
+
+    // (symbol, transfer-holder)
     auto args = std::vector<v8::Local<v8::Value>>{
         constructorSymbol_.Get(isolate_).As<v8::Value>(),
-        v8::External::New(isolate_, instance.release()) // TODO: 潜在的内存泄漏点(当 Constructor 发生异常时)
+        v8::External::New(isolate_, &holder)
     };
     auto val = ctor.ToLocalChecked()->NewInstance(ctx, static_cast<int>(args.size()), args.data());
-    v8_backend::V8Helper::rethrowException(vtry);
-
+    if (val.IsEmpty()) {
+        // Construction failed before adoption; the holder destroys the
+        // instance on scope exit. Rethrow afterwards.
+        v8_backend::V8Helper::rethrowException(vtry);
+    }
+    if (holder.instance) [[unlikely]] {
+        throw std::logic_error{"Constructor did not adopt the native instance: " + meta.name_};
+    }
     return ValueHelper::wrap<Object>(val.ToLocalChecked());
 }
 
+/**
+ * @brief Unwraps a JS object into its native InstancePayload, or null.
+ *
+ * Identity comes from the ClassTag internal field, set by the constructor
+ * callback to the owning ClassMeta pointer. Verification is two pointer
+ * checks: the tag must be non-null and must be a registered class of this
+ * engine (a key of classConstructors_). A foreign object with the same
+ * field count holds unrelated data there, which simply fails the lookup
+ * without ever being dereferenced.
+ */
 InstancePayload* Engine::getInstancePayload(Local<Object> const& obj) const {
-    auto v8This = ValueHelper::unwrap(obj);
-    if (v8This->InternalFieldCount() < (int)InternalFieldSolt::Count) {
+    return asEngine()->payloadOf(ValueHelper::unwrap(obj), this);
+}
+
+InstancePayload* v8_backend::V8Engine::payloadOf(v8::Local<v8::Object> obj, Engine const* engine) {
+    if (obj->InternalFieldCount() < (int)InternalFieldSolt::Count) {
         return nullptr;
     }
-    auto payload = v8This->GetAlignedPointerFromInternalField(static_cast<int>(InternalFieldSolt::InstancePayload));
-    if (!payload) {
+    auto tag = static_cast<ClassMeta const*>(obj->GetAlignedPointerFromInternalField((int)InternalFieldSolt::ClassTag));
+    if (tag == nullptr || !engine->classConstructors_.contains(tag)) {
         return nullptr;
     }
-    return static_cast<InstancePayload*>(payload);
+    return static_cast<InstancePayload*>(
+        obj->GetAlignedPointerFromInternalField((int)InternalFieldSolt::InstancePayload)
+    );
 }
 bool Engine::trySetReferenceInternal(Local<Object> const& parentObj, Local<Object> const& subObj) {
     auto v8Parent = ValueHelper::unwrap(parentObj);
@@ -944,8 +998,9 @@ bool Engine::trySetReferenceInternal(Local<Object> const& parentObj, Local<Objec
         return false;
     }
 
-    constexpr int count = static_cast<int>(InternalFieldSolt::Count);
-    if (v8Parent->InternalFieldCount() < count || v8Child->InternalFieldCount() < count) {
+    // Both ends must be verified native instances: never write internal
+    // fields of foreign objects that happen to have the same field count.
+    if (getInstancePayload(parentObj) == nullptr || getInstancePayload(subObj) == nullptr) {
         return false; // 非法对象
     }
     v8Child->SetInternalField(static_cast<int>(InternalFieldSolt::ParentClassThisRef), v8Parent);
@@ -1030,15 +1085,23 @@ v8::Local<v8::FunctionTemplate> V8Engine::newConstructor(ClassMeta const& meta) 
                 if (!info.IsConstructCall()) {
                     throw Exception{"Native class constructor cannot be called as a function"};
                 }
+                // A foreign new.target (Reflect.construct with a template of
+                // another kind) produces a receiver without internal fields;
+                // reject before writing any field.
+                if (info.This()->InternalFieldCount() < (int)InternalFieldSolt::Count) {
+                    throw Exception{"Native class constructor requires a compatible new.target"};
+                }
 
                 std::unique_ptr<NativeInstance> instance        = nullptr;
                 bool                            constructFromJs = true;
                 if (info.Length() == 2 && info[0]->IsSymbol()
                     && info[0]->StrictEquals(engine->constructorSymbol_.Get(engine->isolate_))
                     && info[1]->IsExternal()) {
-                    // constructor call from native code
-                    auto inst       = info[1].As<v8::External>()->Value();
-                    instance        = std::unique_ptr<NativeInstance>{static_cast<NativeInstance*>(inst)};
+                    // constructor call from native code: adopt from the transfer
+                    // holder created by Engine::newInstance()
+                    auto transfer =
+                        static_cast<v8_backend::NativeInstanceTransfer*>(info[1].As<v8::External>()->Value());
+                    instance        = std::move(transfer->instance);
                     constructFromJs = false;
                 } else {
                     // constructor call from JS code
@@ -1058,6 +1121,11 @@ v8::Local<v8::FunctionTemplate> V8Engine::newConstructor(ClassMeta const& meta) 
                 info.This()->SetAlignedPointerInInternalField(
                     static_cast<int>(InternalFieldSolt::InstancePayload),
                     payload
+                );
+                // Class tag for O(1) receiver verification; see getInstancePayload.
+                info.This()->SetAlignedPointerInInternalField(
+                    static_cast<int>(InternalFieldSolt::ClassTag),
+                    const_cast<ClassMeta*>(meta)
                 );
 
                 if (constructFromJs) {
@@ -1181,7 +1249,10 @@ void V8Engine::buildInstanceMembers(v8::Local<v8::FunctionTemplate>& obj, ClassM
     auto& instanceMeta = meta.instanceMeta_;
 
     auto prototype = obj->PrototypeTemplate();
-    auto signature = v8::Signature::New(isolate_);
+    // Signature bound to this class template: V8 rejects calls whose receiver
+    // was not created by this constructor (or a derived one via Inherit)
+    // with a TypeError before the callback runs.
+    auto signature = v8::Signature::New(isolate_, obj);
 
     auto ctx = context_.Get(isolate_);
     auto tag = nativeFunctionTag_.Get(isolate_);
@@ -1192,12 +1263,14 @@ void V8Engine::buildInstanceMembers(v8::Local<v8::FunctionTemplate>& obj, ClassM
         auto fn = v8::FunctionTemplate::New(
             isolate_,
             [](v8::FunctionCallbackInfo<v8::Value> const& info) {
-                auto method  = static_cast<InstanceMemberMeta::Method*>(info.Data().As<v8::External>()->Value());
-                auto payload = info.This()->GetAlignedPointerFromInternalField(
-                    static_cast<int>(InternalFieldSolt::InstancePayload)
-                );
+                auto method = static_cast<InstanceMemberMeta::Method*>(info.Data().As<v8::External>()->Value());
 
-                auto typed  = static_cast<InstancePayload*>(payload);
+                // The template signature has already rejected receivers not
+                // created by this class constructor, so the payload field can
+                // be read directly.
+                auto typed  = static_cast<InstancePayload*>(info.This()->GetAlignedPointerFromInternalField(
+                    static_cast<int>(InternalFieldSolt::InstancePayload)
+                ));
                 auto engine = typed->getEngine();
 
                 EngineScope tracker{engine}; // for addon
@@ -1229,12 +1302,12 @@ void V8Engine::buildInstanceMembers(v8::Local<v8::FunctionTemplate>& obj, ClassM
         v8Getter = v8::FunctionTemplate::New(
             isolate_,
             [](v8::FunctionCallbackInfo<v8::Value> const& info) {
-                auto prop    = static_cast<InstanceMemberMeta::Property*>(info.Data().As<v8::External>()->Value());
-                auto wrapped = info.This()->GetAlignedPointerFromInternalField(
-                    static_cast<int>(InternalFieldSolt::InstancePayload)
-                );
+                auto prop = static_cast<InstanceMemberMeta::Property*>(info.Data().As<v8::External>()->Value());
 
-                auto typed  = static_cast<InstancePayload*>(wrapped);
+                // The template signature has already rejected wrong receivers.
+                auto typed  = static_cast<InstancePayload*>(info.This()->GetAlignedPointerFromInternalField(
+                    static_cast<int>(InternalFieldSolt::InstancePayload)
+                ));
                 auto engine = typed->getEngine();
 
                 EngineScope tracker{engine}; // for addon
@@ -1257,12 +1330,12 @@ void V8Engine::buildInstanceMembers(v8::Local<v8::FunctionTemplate>& obj, ClassM
             v8Setter = v8::FunctionTemplate::New(
                 isolate_,
                 [](v8::FunctionCallbackInfo<v8::Value> const& info) {
-                    auto prop    = static_cast<InstanceMemberMeta::Property*>(info.Data().As<v8::External>()->Value());
-                    auto wrapped = info.This()->GetAlignedPointerFromInternalField(
-                        static_cast<int>(InternalFieldSolt::InstancePayload)
-                    );
+                    auto prop = static_cast<InstanceMemberMeta::Property*>(info.Data().As<v8::External>()->Value());
 
-                    auto typed  = static_cast<InstancePayload*>(wrapped);
+                    // The template signature has already rejected wrong receivers.
+                    auto typed  = static_cast<InstancePayload*>(info.This()->GetAlignedPointerFromInternalField(
+                        static_cast<int>(InternalFieldSolt::InstancePayload)
+                    ));
                     auto engine = typed->getEngine();
 
                     EngineScope tracker{engine}; // for addon

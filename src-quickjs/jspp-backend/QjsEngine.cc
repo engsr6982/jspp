@@ -1,6 +1,7 @@
 #include "QjsEngine.h"
 #include "QjsHelper.h"
 
+#include "jspp/core/BiMap.h"
 #include "jspp/core/Engine.h"
 #include "jspp/core/EngineScope.h"
 #include "jspp/core/Exception.h"
@@ -403,8 +404,7 @@ char* QjsModuleLoader::normalize(
         // scripts ship only as quickjs bytecode (.bin) while import specifiers keep the
         // ".js" extension — resolve to the sibling .bin.
         auto resolved = false;
-        if (hasFlag(engine->flags_, QjsInitializeFlags::EnableBytecodeImport)
-            && final_path.extension() == ".js") {
+        if (hasFlag(engine->flags_, QjsInitializeFlags::EnableBytecodeImport) && final_path.extension() == ".js") {
             auto binPath = final_path;
             binPath.replace_extension(".bin");
             if (std::filesystem::is_regular_file(binPath)) {
@@ -955,9 +955,9 @@ void qjs_backend::QjsEngine::NativeClassFinalizer(JSRuntime*, JSValueConst value
         auto payload = static_cast<InstancePayload*>(opaque);
         auto engine  = payload->getEngine();
 #ifdef JSPP_DEBUG
-        auto iter = engine->classIds_.find(payload->getDefine());
-        assert(iter != engine->classIds_.end());
-        assert(id == iter->second); // check classId
+        auto* registeredId = engine->classIds_.find(payload->getDefine());
+        assert(registeredId != nullptr);
+        assert(id == *registeredId); // check classId
 #endif
         PauseGcGuard guard(engine);
         EngineScope  lock{engine};
@@ -1011,7 +1011,7 @@ Local<Value> Engine::performRegisterClass(ClassMeta const& meta) {
         // alloc classId
         assert(!classIds_.contains(&meta));
         JS_NewClassID(engine->runtime_, &id);
-        classIds_.emplace(&meta, id);
+        classIds_.insert(&meta, id);
     }
     JS_NewClass(runtime_, id, &classDef);
 
@@ -1040,7 +1040,7 @@ Local<Value> Engine::performRegisterClass(ClassMeta const& meta) {
             throw Exception("Base class not registered: " + meta.name_);
         }
         // Child.prototype.__proto__ = Parent.prototype;
-        JSClassID baseId    = classIds_.at(meta.base_);
+        JSClassID baseId    = *classIds_.find(meta.base_);
         auto      baseProto = JS_GetClassProto(context_, baseId);
         auto      code      = JS_SetPrototype(context_, qjs_backend::QjsHelper::peekValue(prototype), baseProto);
         JS_FreeValue(context_, baseProto);
@@ -1129,10 +1129,25 @@ Local<Object> Engine::newInstance(ClassMeta const& meta, std::unique_ptr<NativeI
     return ValueHelper::wrap<Object>(result);
 }
 
+/**
+ * @brief Unwraps a JS object into its native InstancePayload, or null.
+ *
+ * The check order is part of the safety contract:
+ *   1. JS_GetClassID reads only the object tag, never opaque content.
+ *   2. The class ID must belong to a jspp-registered class before
+ *      JS_GetOpaque runs: other classes (Proxy, module namespace, ...)
+ *      store their own data in the opaque field.
+ *   3. Only then may the opaque pointer be cast to InstancePayload.
+ * Binding entry points that unwrap payloads must keep this order.
+ */
 InstancePayload* Engine::getInstancePayload(Local<Object> const& obj) const {
     auto val = qjs_backend::QjsHelper::peekValue(obj);
     auto id  = JS_GetClassID(val);
-    // TODO: ensure id is registered class
+
+    if (!classIds_.containsValue(id)) {
+        return nullptr;
+    }
+
     if (auto opaque = JS_GetOpaque(qjs_backend::QjsHelper::peekValue(obj), id)) {
         return static_cast<InstancePayload*>(opaque);
     }
@@ -1146,6 +1161,13 @@ bool Engine::trySetReferenceInternal(Local<Object> const& parentObj, Local<Objec
     auto subVal    = qjs_backend::QjsHelper::peekValue(subObj);
 
     if (JS_IsException(parentVal) || JS_IsException(subVal)) {
+        return false;
+    }
+
+    // Both ends must be verified native instances (registered-class check
+    // included): never attach internal references to foreign objects such as
+    // plain objects or proxies.
+    if (engine->getInstancePayload(parentObj) == nullptr || engine->getInstancePayload(subObj) == nullptr) {
         return false;
     }
 
@@ -1198,8 +1220,8 @@ Local<Function> QjsEngine::newDataFunction(DataFunctionCallback callback, void* 
 
     auto fn = JS_NewCFunctionData(
         context_,
-        [](JSContext* ctx, JSValueConst thiz, int argc, JSValueConst* argv, int /* magic */, JSValueConst* data
-        ) -> JSValue {
+        [](JSContext* ctx, JSValueConst thiz, int argc, JSValueConst* argv, int /* magic */, JSValueConst* data)
+            -> JSValue {
             auto externalEngine = data[3];
             auto externalID     = JS_GetClassID(externalEngine);
             auto engine         = static_cast<Engine*>(JS_GetOpaque(externalEngine, externalID));
@@ -1258,7 +1280,7 @@ Local<Function> QjsEngine::newConstructor(ClassMeta const& meta) {
                 auto prototype = JS_GetPropertyStr(engine->context_, scriptThis, "prototype");
                 QjsHelper::rethrowException(prototype);
 
-                auto rawProto = JS_NewObjectProtoClass(engine->context_, prototype, engine->classIds_.at(meta));
+                auto rawProto = JS_NewObjectProtoClass(engine->context_, prototype, *engine->classIds_.find(meta));
                 JS_FreeValue(engine->context_, prototype);
                 QjsHelper::rethrowException(rawProto);
 
@@ -1383,10 +1405,13 @@ Local<Object> QjsEngine::newClassPrototype(ClassMeta const& meta) {
                 auto func = static_cast<InstanceMemberMeta::Method*>(data1);
                 auto meta = static_cast<ClassMeta*>(data2);
 
-                auto id = JS_GetClassID(args.impl_.thiz_);
-                assert(id != JS_INVALID_CLASS_ID);
-
-                auto payload = static_cast<InstancePayload*>(JS_GetOpaque(args.impl_.thiz_, id));
+                // Routed through Engine::getInstancePayload: only classes
+                // registered by jspp carry an InstancePayload (a Proxy receiver,
+                // for example, must not be reinterpreted as one).
+                if (!args.hasThiz()) [[unlikely]] {
+                    throw Exception{"Method called on incompatible receiver", ExceptionType::TypeError};
+                }
+                auto payload = args.runtime()->getInstancePayload(args.thiz());
                 if (!payload) [[unlikely]] {
                     throw Exception{"Method called on incompatible receiver", ExceptionType::TypeError};
                 }
@@ -1416,10 +1441,12 @@ Local<Object> QjsEngine::newClassPrototype(ClassMeta const& meta) {
                 auto prop = static_cast<InstanceMemberMeta::Property*>(data1);
                 auto meta = static_cast<ClassMeta*>(data2);
 
-                auto id = JS_GetClassID(args.impl_.thiz_);
-                assert(id != JS_INVALID_CLASS_ID);
-
-                auto payload = static_cast<InstancePayload*>(JS_GetOpaque(args.impl_.thiz_, id));
+                // See the method dispatch note: never trust opaque data of
+                // non-jspp classes (e.g. a Proxy receiver).
+                if (!args.hasThiz()) [[unlikely]] {
+                    throw Exception{"Getter called on incompatible receiver", ExceptionType::TypeError};
+                }
+                auto payload = args.runtime()->getInstancePayload(args.thiz());
                 if (!payload) [[unlikely]] {
                     throw Exception{"Getter called on incompatible receiver", ExceptionType::TypeError};
                 }
@@ -1439,10 +1466,12 @@ Local<Object> QjsEngine::newClassPrototype(ClassMeta const& meta) {
                     auto prop = static_cast<InstanceMemberMeta::Property*>(data1);
                     auto meta = static_cast<ClassMeta*>(data2);
 
-                    auto id = JS_GetClassID(args.impl_.thiz_);
-                    assert(id != JS_INVALID_CLASS_ID);
-
-                    auto payload = static_cast<InstancePayload*>(JS_GetOpaque(args.impl_.thiz_, id));
+                    // See the method dispatch note: never trust opaque data of
+                    // non-jspp classes (e.g. a Proxy receiver).
+                    if (!args.hasThiz()) [[unlikely]] {
+                        throw Exception{"Setter called on incompatible receiver", ExceptionType::TypeError};
+                    }
+                    auto payload = args.runtime()->getInstancePayload(args.thiz());
                     if (!payload) [[unlikely]] {
                         throw Exception{"Setter called on incompatible receiver", ExceptionType::TypeError};
                     }

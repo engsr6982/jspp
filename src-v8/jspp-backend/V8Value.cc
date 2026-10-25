@@ -20,6 +20,7 @@ JSPP_WARNING_GUARD_BEGIN
 #include <v8-local-handle.h>
 #include <v8-primitive.h>
 #include <v8-promise.h>
+#include <v8-proxy.h>
 #include <v8-template.h>
 #include <v8-value.h>
 JSPP_WARNING_GUARD_END
@@ -213,6 +214,26 @@ void PromiseResolver::reject(Local<Value> const& reason) const {
     if (maybe.IsNothing()) {
         v8_backend::V8Helper::rethrowException(vtry);
     }
+}
+
+Local<Proxy> Proxy::newProxy(Local<Object> const& target, Local<Object> const& handler) {
+    auto&& [isolate, ctx] = v8_backend::V8Helper::currentIsolateContextChecked();
+
+    v8::TryCatch vtry{isolate};
+    auto         maybe = v8::Proxy::New(ctx, ValueHelper::unwrap(target), ValueHelper::unwrap(handler));
+    if (maybe.IsEmpty()) {
+        v8_backend::V8Helper::rethrowException(vtry);
+    }
+    return ValueHelper::wrap<Proxy>(maybe.ToLocalChecked());
+}
+
+Local<Value> Local<Proxy>::target() const {
+    // jspp introspection extension; V8 returns null once the proxy is revoked.
+    return Local<Value>{val->GetTarget()};
+}
+
+Local<Value> Local<Proxy>::handler() const {
+    return Local<Value>{val->GetHandler()};
 }
 
 PromiseState Local<Promise>::state() const {

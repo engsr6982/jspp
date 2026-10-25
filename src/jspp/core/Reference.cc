@@ -25,6 +25,7 @@ ValueKind Local<Value>::kind() const {
     if (isBigInt()) return ValueKind::kBigInt;
     if (isString()) return ValueKind::kString;
     if (isSymbol()) return ValueKind::kSymbol;
+    if (isProxy()) return ValueKind::kProxy; // proxies are recognized before any other object-like kind
     if (isPromise()) return ValueKind::kPromise;
     if (isObject()) return ValueKind::kObject;
     if (isArray()) return ValueKind::kArray;

@@ -13,6 +13,7 @@ JSPP_WARNING_GUARD_BEGIN
 #include <v8-local-handle.h>
 #include <v8-primitive.h>
 #include <v8-promise.h>
+#include <v8-proxy.h>
 #include <v8-value.h>
 JSPP_WARNING_GUARD_END
 
@@ -30,6 +31,7 @@ bool Local<Value>::isObject() const { return !val.IsEmpty() && !isNullOrUndefine
 bool Local<Value>::isArray() const { return !val.IsEmpty() && !isNullOrUndefined() && val->IsArray(); }
 bool Local<Value>::isFunction() const { return !val.IsEmpty() && !isNullOrUndefined() && val->IsFunction(); }
 bool Local<Value>::isPromise() const { return !val.IsEmpty() && !isNullOrUndefined() && val->IsPromise(); }
+bool Local<Value>::isProxy() const { return !val.IsEmpty() && !isNullOrUndefined() && val->IsProxy(); }
 
 
 Local<Value> Local<Value>::asValue() const { return *this; }
@@ -76,6 +78,10 @@ Local<Function> Local<Value>::asFunction() const {
 Local<Promise> Local<Value>::asPromise() const {
     if (isPromise()) return Local<Promise>{val.As<v8::Promise>()};
     throw Exception("cannot convert to Promise");
+}
+Local<Proxy> Local<Value>::asProxy() const {
+    if (isProxy()) return Local<Proxy>{val.As<v8::Proxy>()};
+    throw Exception("cannot convert to Proxy");
 }
 
 void Local<Value>::clear() { val.Clear(); }
@@ -195,8 +201,10 @@ bool Local<Object>::has(Local<String> const& key) const {
     auto&& [isolate, ctx] = v8_backend::V8Helper::currentIsolateContextChecked();
     v8::TryCatch vtry{isolate};
     auto         maybe = val->Has(ctx, key.val);
-    v8_backend::V8Helper::rethrowException(vtry);
-    return maybe.ToChecked();
+    if (maybe.IsNothing()) {
+        v8_backend::V8Helper::rethrowException(vtry); // trap exception, not a falsy result
+    }
+    return maybe.FromJust();
 }
 
 Local<Value> Local<Object>::get(Local<String> const& key) const {
@@ -210,15 +218,19 @@ Local<Value> Local<Object>::get(Local<String> const& key) const {
 void Local<Object>::set(Local<String> const& key, Local<Value> const& value) {
     auto&& [isolate, ctx] = v8_backend::V8Helper::currentIsolateContextChecked();
     v8::TryCatch vtry{isolate};
-    (void)val->Set(ctx, key.val, value.val).ToChecked();
-    v8_backend::V8Helper::rethrowException(vtry);
+    auto         maybe = val->Set(ctx, key.val, value.val);
+    if (maybe.IsNothing()) {
+        v8_backend::V8Helper::rethrowException(vtry); // trap exception, not a failed write
+    }
 }
 
 void Local<Object>::remove(Local<String> const& key) {
     auto&& [isolate, ctx] = v8_backend::V8Helper::currentIsolateContextChecked();
     v8::TryCatch vtry{isolate};
-    (void)val->Delete(ctx, key.val).ToChecked();
-    v8_backend::V8Helper::rethrowException(vtry);
+    auto         maybe = val->Delete(ctx, key.val);
+    if (maybe.IsNothing()) {
+        v8_backend::V8Helper::rethrowException(vtry); // trap exception, not a failed delete
+    }
 }
 
 std::vector<Local<String>> Local<Object>::getOwnPropertyNames() const {
@@ -254,8 +266,10 @@ bool Local<Object>::instanceof(Local<Value> const& type) const {
     v8::TryCatch vtry{isolate};
 
     auto maybe = val->InstanceOf(ctx, type.asObject().val);
-    v8_backend::V8Helper::rethrowException(vtry);
-    return maybe.ToChecked();
+    if (maybe.IsNothing()) {
+        v8_backend::V8Helper::rethrowException(vtry); // instanceof trap exception
+    }
+    return maybe.FromJust();
 }
 
 bool Local<Object>::defineOwnProperty(
@@ -267,8 +281,10 @@ bool Local<Object>::defineOwnProperty(
     v8::TryCatch vtry{isolate};
 
     auto maybe = val->DefineOwnProperty(ctx, key.val, value.val, v8_backend::V8Helper::castAttribute(attrs));
-    v8_backend::V8Helper::rethrowException(vtry);
-    return maybe.ToChecked();
+    if (maybe.IsNothing()) {
+        v8_backend::V8Helper::rethrowException(vtry); // trap exception, not a rejected definition
+    }
+    return maybe.FromJust();
 }
 
 // todo: wait PropertyDescriptor implementation
@@ -297,15 +313,19 @@ Local<Value> Local<Array>::get(size_t index) const {
 void Local<Array>::set(size_t index, Local<Value> const& value) {
     auto&& [isolate, ctx] = v8_backend::V8Helper::currentIsolateContextChecked();
     v8::TryCatch vtry{isolate};
-    (void)val->Set(ctx, static_cast<uint32_t>(index), value.val).ToChecked();
-    v8_backend::V8Helper::rethrowException(vtry);
+    auto         maybe = val->Set(ctx, static_cast<uint32_t>(index), value.val);
+    if (maybe.IsNothing()) {
+        v8_backend::V8Helper::rethrowException(vtry); // trap exception, not a failed write
+    }
 }
 
 void Local<Array>::push(Local<Value> const& value) {
     auto&& [isolate, ctx] = v8_backend::V8Helper::currentIsolateContextChecked();
     v8::TryCatch vtry{isolate};
-    (void)val->Set(ctx, val->Length(), value.val).ToChecked();
-    v8_backend::V8Helper::rethrowException(vtry);
+    auto         maybe = val->Set(ctx, val->Length(), value.val);
+    if (maybe.IsNothing()) {
+        v8_backend::V8Helper::rethrowException(vtry); // trap exception, not a failed write
+    }
 }
 
 void Local<Array>::clear() {
@@ -314,9 +334,10 @@ void Local<Array>::clear() {
 
     // Method 1: Set length = 0
     auto len_str = v8::String::NewFromUtf8Literal(isolate, "length");
-    (void)val->Set(ctx, len_str, v8::Integer::New(isolate, 0)).ToChecked();
-
-    v8_backend::V8Helper::rethrowException(vtry);
+    auto maybe   = val->Set(ctx, len_str, v8::Integer::New(isolate, 0));
+    if (maybe.IsNothing()) {
+        v8_backend::V8Helper::rethrowException(vtry); // trap exception, not a failed write
+    }
 }
 
 IMPL_SPECIALIZATION_LOCAL(Function);
@@ -374,6 +395,10 @@ IMPL_SPECIALIZATION_LOCAL(Promise);
 IMPL_SPECALIZATION_AS_VALUE(Promise);
 IMPL_DECL_BACKEND_IMPL_TYPE(Promise);
 
+IMPL_SPECIALIZATION_LOCAL(Proxy);
+IMPL_SPECALIZATION_AS_VALUE(Proxy);
+IMPL_DECL_BACKEND_IMPL_TYPE(Proxy);
+
 
 #undef IMPL_SPECALIZATION_LOCAL
 #undef IMPL_SPECALIZATION_AS_VALUE
@@ -397,6 +422,7 @@ EXPLICIT_INSTANTIATE_BACKEND(Object)
 EXPLICIT_INSTANTIATE_BACKEND(Array)
 EXPLICIT_INSTANTIATE_BACKEND(Function)
 EXPLICIT_INSTANTIATE_BACKEND(Promise)
+EXPLICIT_INSTANTIATE_BACKEND(Proxy)
 #undef EXPLICIT_INSTANTIATE_BACKEND
 } // namespace v8_backend
 
@@ -416,6 +442,7 @@ EXPLICIT_INSTANTIATE_REF(Object)
 EXPLICIT_INSTANTIATE_REF(Array)
 EXPLICIT_INSTANTIATE_REF(Function)
 EXPLICIT_INSTANTIATE_REF(Promise)
+EXPLICIT_INSTANTIATE_REF(Proxy)
 #undef EXPLICIT_INSTANTIATE_REF
 
 } // namespace jspp

@@ -10,22 +10,17 @@ namespace jspp {
  * @brief C++ handle of an ECMA-262 PromiseCapability Record: holds a pending
  *        promise together with its resolve/reject capability.
  *
- * The promise handed to the script is a native engine promise, so await,
- * then-chaining, species behavior and microtask ordering are fully provided
- * by the engine (ECMA conformant).
+ * The promise is a native engine promise, so await, then-chaining and
+ * microtask ordering follow the engine (ECMA conformant).
  *
  * @note  Movable, not copyable. May be moved across threads; resolve()/reject()
- *        must run inside an EngineScope of the owning engine. QuickJS itself
- *        does not support multi-threaded runtimes; jspp enforces its own
- *        serial-access contract (engine mutex, plus JS_UpdateStackTop on every
- *        thread switch for stack overflow checks) and covers it with tests —
- *        access is strictly sequential, never concurrent, and this is not an
- *        upstream QuickJS guarantee. V8 serializes with v8::Locker.
- * @note  Lifetime contract is identical to Global<T>: a resolver must not
- *        outlive its Engine. Keep the engine alive until in-flight workers
- *        finish, or reset() the resolver beforehand.
- * @note  Settling twice is a silent no-op, per ECMA NewPromiseCapability
- *        (alreadyResolved flag).
+ *        must run inside an EngineScope of the owning engine. QuickJS runtimes
+ *        are single threaded: EngineScope serializes access with the engine
+ *        mutex and refreshes the stack top on every thread switch
+ *        (JS_UpdateStackTop), so access is sequential, never concurrent.
+ *        V8 serializes with v8::Locker.
+ * @note  Lifetime follows Global<T>: a resolver must not outlive its Engine.
+ * @note  Settling twice is a silent no-op (ECMA alreadyResolved flag).
  */
 class PromiseResolver final {
 public:

@@ -24,6 +24,7 @@ enum class ValueKind : uint8_t {
     kArray,
     kFunction,
     kPromise,
+    kProxy,
 };
 
 class Value {
@@ -121,6 +122,25 @@ public:
      * @brief Create an already rejected promise.
      */
     [[nodiscard]] static Local<Promise> rejected(Local<Value> const& reason);
+};
+
+/**
+ * @brief Native engine Proxy (ECMA ProxyCreate).
+ * @note  Trap dispatch and invariant checks are engine-side; the handler is
+ *        an ordinary object whose traps may be native functions
+ *        (Function::newFunction) or script functions.
+ * @note  No C++-side revoke API: newProxy() does not return the ECMAScript
+ *        revoker. Proxies created by script-side Proxy.revocable() can still
+ *        be held and used.
+ */
+class Proxy : public Value {
+public:
+    Proxy() = delete;
+
+    /**
+     * @brief ECMAScript ProxyCreate: proxying target with handler.
+     */
+    [[nodiscard]] static Local<Proxy> newProxy(Local<Object> const& target, Local<Object> const& handler);
 };
 
 class Engine; // forward declaration

@@ -206,8 +206,8 @@ PromiseResolver PromiseResolver::newResolver() {
 
     PromiseResolver resolver;
     {
-        auto local = ValueHelper::wrap<Promise>(promise); // takes ownership of the new reference
-        resolver.impl_.promise_.reset(local);             // Global::reset duplicates internally
+        auto local = ValueHelper::wrap<Promise>(promise); // adopts the new reference
+        resolver.impl_.promise_.reset(local);             // Global::reset dups internally
     }
     {
         auto local = ValueHelper::wrap<Function>(funcs[0]);
@@ -249,6 +249,34 @@ void PromiseResolver::reject(Local<Value> const& reason) const {
         throw Exception{"PromiseResolver::reject(): resolver is empty"};
     }
     (void)impl_.reject_.get().call(Local<Value>{}, {reason});
+}
+
+Local<Proxy> Proxy::newProxy(Local<Object> const& target, Local<Object> const& handler) {
+    auto ctx   = qjs_backend::QjsHelper::currentContextChecked();
+    auto proxy = JS_NewProxy(ctx, qjs_backend::QjsHelper::peekValue(target), qjs_backend::QjsHelper::peekValue(handler));
+    qjs_backend::QjsHelper::rethrowException(proxy);
+    return ValueHelper::wrap<Proxy>(proxy); // owned reference
+}
+
+Local<Value> Local<Proxy>::target() const {
+    auto ctx = qjs_backend::QjsHelper::currentContextChecked();
+    auto ret = JS_GetProxyTarget(ctx, val); // returns a new reference
+    if (JS_IsException(ret)) {
+        // A revoked proxy throws here; report null per the API contract.
+        JS_FreeValue(ctx, JS_GetException(ctx));
+        return Local<Value>{JS_NULL};
+    }
+    return Local<Value>{ret};
+}
+
+Local<Value> Local<Proxy>::handler() const {
+    auto ctx = qjs_backend::QjsHelper::currentContextChecked();
+    auto ret = JS_GetProxyHandler(ctx, val); // returns a new reference
+    if (JS_IsException(ret)) {
+        JS_FreeValue(ctx, JS_GetException(ctx));
+        return Local<Value>{JS_NULL};
+    }
+    return Local<Value>{ret};
 }
 
 PromiseState Local<Promise>::state() const {
@@ -305,7 +333,7 @@ Local<Promise> Local<Promise>::then(Local<Function> const& onFulfilled) const {
     EngineScope::currentEngineChecked().pumpPendingJobs();
     return ValueHelper::wrap<Promise>(ret);
 #else
-    // Compatibility fallback for QuickJS-NG < 0.16.0 — see the full warning
+    // Compatibility fallback for QuickJS-NG < 0.16.0 - see the full warning
     // on then(onFulfilled, onRejected) above.
     // TODO: Remove this fallback once the minimum supported QuickJS-NG
     // version is raised to >= 0.16.0.
@@ -323,7 +351,7 @@ Local<Promise> Local<Promise>::catchError(Local<Function> const& onRejected) con
     EngineScope::currentEngineChecked().pumpPendingJobs();
     return ValueHelper::wrap<Promise>(ret);
 #else
-    // Compatibility fallback for QuickJS-NG < 0.16.0 — see the full warning
+    // Compatibility fallback for QuickJS-NG < 0.16.0 - see the full warning
     // on then(onFulfilled, onRejected) above.
     // TODO: Remove this fallback once the minimum supported QuickJS-NG
     // version is raised to >= 0.16.0.

@@ -39,6 +39,15 @@ public:
 
     [[nodiscard]] bool isDestroying() const;
 
+    /**
+     * Evaluate a script.
+     * @note V8 backend: the completion value is stored as a handle in the
+     *       current HandleScope, and dropping the returned Local does not
+     *       clear that slot. A script whose completion value is a heap object
+     *       (e.g. `holder = new X();`) keeps that object reachable until the
+     *       enclosing EngineScope ends. When GC behavior matters, end the
+     *       script with a neutral completion value (an IIFE, or `; 0`).
+     */
     Local<Value> evalScript(Local<String> const& code);
 
     /**
@@ -120,6 +129,12 @@ public:
 
     Local<Object> newInstance(ClassMeta const& meta, std::unique_ptr<NativeInstance>&& instance);
 
+    /**
+     * @brief ECMA `instanceof` semantics, identical to script-side
+     *        `obj instanceof C`: honors Symbol.hasInstance and proxy
+     *        prototype traps on every backend.
+     * @note  May execute user JS; trap exceptions propagate as jspp::Exception.
+     */
     [[nodiscard]] bool isInstanceOf(Local<Object> const& obj, ClassMeta const& meta) const;
 
     [[nodiscard]] InstancePayload* getInstancePayload(Local<Object> const& obj) const;

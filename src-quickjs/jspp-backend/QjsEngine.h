@@ -1,5 +1,6 @@
 #pragma once
 #include "jspp/Macro.h"
+#include "jspp/core/BiMap.h"
 #include "jspp/core/Fwd.h"
 
 #include <atomic>
@@ -179,7 +180,7 @@ protected:
     JSAtom toStringTagSymbolAtom_{};
     JSAtom referenceInternalAtom_{};
 
-    std::unordered_map<ClassMeta const*, JSClassID>                   classIds_{};
+    internal::BiMap<ClassMeta const*, JSClassID>                      classIds_{};
     std::unordered_map<ClassMeta const*, std::pair<JSValue, JSValue>> classConstructors_{}; // ctor, prototype
     std::unordered_map<ClassMeta const*, JSValue>                     staticClassObject_{}; // static class only
 

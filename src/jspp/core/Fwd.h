@@ -25,6 +25,7 @@ class Function;
 class Object;
 class Array;
 class Promise;
+class Proxy;
 
 class Arguments;
 

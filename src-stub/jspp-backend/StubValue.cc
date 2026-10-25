@@ -133,6 +133,21 @@ void PromiseResolver::reject(Local<Value> const& reason) const {
     throw Exception{"Not implemented"};
 }
 
+Local<Proxy> Proxy::newProxy(Local<Object> const& target, Local<Object> const& handler) {
+    // TODO: please implement this
+    throw Exception{"Not implemented"};
+}
+
+Local<Value> Local<Proxy>::target() const {
+    // TODO: please implement this
+    throw Exception{"Not implemented"};
+}
+
+Local<Value> Local<Proxy>::handler() const {
+    // TODO: please implement this
+    throw Exception{"Not implemented"};
+}
+
 PromiseState Local<Promise>::state() const {
     // TODO: please implement this
     throw Exception{"Not implemented"};

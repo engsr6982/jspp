@@ -29,6 +29,7 @@ bool Local<Value>::isFunction() const {
     return !JS_IsUninitialized(val) && JS_IsFunction(ctx, val);
 }
 bool Local<Value>::isPromise() const { return !JS_IsUninitialized(val) && JS_IsPromise(val); }
+bool Local<Value>::isProxy() const { return !JS_IsUninitialized(val) && JS_IsProxy(val); }
 
 
 Local<Value> Local<Value>::asValue() const { return *this; }
@@ -75,6 +76,10 @@ Local<Function> Local<Value>::asFunction() const {
 Local<Promise> Local<Value>::asPromise() const {
     if (isPromise()) return Local<Promise>{qjs_backend::QjsHelper::dupValue(val)};
     throw Exception("cannot convert to Promise");
+}
+Local<Proxy> Local<Value>::asProxy() const {
+    if (isProxy()) return Local<Proxy>{qjs_backend::QjsHelper::dupValue(val)};
+    throw Exception("cannot convert to Proxy");
 }
 
 void Local<Value>::clear() {
@@ -447,6 +452,10 @@ IMPL_SPECIALIZATION_LOCAL(Promise);
 IMPL_SPECALIZATION_AS_VALUE(Promise);
 IMPL_DECL_BACKEND_IMPL_TYPE(Promise);
 
+IMPL_SPECIALIZATION_LOCAL(Proxy);
+IMPL_SPECALIZATION_AS_VALUE(Proxy);
+IMPL_DECL_BACKEND_IMPL_TYPE(Proxy);
+
 
 #undef IMPL_SPECALIZATION_LOCAL
 #undef IMPL_SPECALIZATION_AS_VALUE
@@ -471,6 +480,7 @@ EXPLICIT_INSTANTIATE_REF(Object)
 EXPLICIT_INSTANTIATE_REF(Array)
 EXPLICIT_INSTANTIATE_REF(Function)
 EXPLICIT_INSTANTIATE_REF(Promise)
+EXPLICIT_INSTANTIATE_REF(Proxy)
 #undef EXPLICIT_INSTANTIATE_REF
 
 } // namespace jspp

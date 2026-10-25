@@ -633,10 +633,9 @@ TEST_CASE_METHOD(PromiseTestFixture, "PromiseResolver: cross-thread settle") {
 
     // Alternate main/worker threads for several rounds: each round moves one
     // resolver to a worker thread, settles it there and reads the result back
-    // on the main thread. QuickJS itself does not support multi-threaded
-    // runtimes; this exercises jspp's own serial-access implementation (engine
-    // mutex + JS_UpdateStackTop on scope entry). It verifies these paths, not
-    // a general QuickJS thread-safety guarantee.
+    // on the main thread. QuickJS runtimes are single threaded; EngineScope
+    // serializes access (engine mutex + JS_UpdateStackTop on scope entry),
+    // which is what these thread switches exercise.
     for (int round = 0; round < 3; ++round) {
         PromiseResolver resolver;
         {
@@ -696,7 +695,7 @@ TEST_CASE_METHOD(PromiseTestFixture, "Unhandled rejection does not crash the eng
         engine->globalThis().set(String::newString("p"), resolver.promise());
         resolver.reject(String::newString("nobody listens"));
         // The resolver is destroyed here, before the engine (contract: a
-        // resolver must not outlive its engine — so the reverse order,
+        // resolver must not outlive its engine, so the reverse order,
         // destroying the engine while a resolver is still alive, is UB by
         // contract and intentionally not tested).
     }

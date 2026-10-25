@@ -99,6 +99,14 @@ protected:
 
     v8::Local<v8::FunctionTemplate> newConstructor(ClassMeta const& meta);
 
+    /**
+     * @brief O(1) unwrap of a JS object into its InstancePayload, or null.
+     *        Verifies the ClassTag internal field against the registered
+     *        classes of the engine; used by Engine::getInstancePayload and
+     *        the instance member dispatch callbacks.
+     */
+    static InstancePayload* payloadOf(v8::Local<v8::Object> obj, Engine const* engine);
+
     void buildStaticMembers(v8::Local<v8::FunctionTemplate>& obj, ClassMeta const& meta);
     void buildInstanceMembers(v8::Local<v8::FunctionTemplate>& obj, ClassMeta const& meta);
 
@@ -116,7 +124,8 @@ protected:
 
     enum class InternalFieldSolt : int {
         InstancePayload    = 0, // for InstancePayload(managed Engine、NativeInstance、any flag)
-        ParentClassThisRef = 1, // for ReturnValuePolicy::kReferenceInternal
+        ClassTag           = 1, // ClassMeta const* identifying the owning jspp class
+        ParentClassThisRef = 2, // for ReturnValuePolicy::kReferenceInternal
         Count,
     };
 

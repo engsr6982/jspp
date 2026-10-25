@@ -79,6 +79,7 @@ public:
     [[nodiscard]] bool isArray() const;
     [[nodiscard]] bool isFunction() const;
     [[nodiscard]] bool isPromise() const;
+    [[nodiscard]] bool isProxy() const;
 
     [[nodiscard]] Local<Value>     asValue() const;
     [[nodiscard]] Local<Null>      asNull() const;
@@ -92,6 +93,7 @@ public:
     [[nodiscard]] Local<Array>     asArray() const;
     [[nodiscard]] Local<Function>  asFunction() const;
     [[nodiscard]] Local<Promise>   asPromise() const;
+    [[nodiscard]] Local<Proxy>     asProxy() const;
 
     /**
      * @tparam T must be the type of as described above
@@ -278,6 +280,27 @@ public:
 
     /** JavaScript: Promise.prototype.catch */
     [[nodiscard]] Local<Promise> catchError(Local<Function> const& onRejected) const;
+};
+
+template <>
+class Local<Proxy> {
+    SPECIALIZATION_LOCAL(Proxy);
+    SPECALIZATION_AS_VALUE(Proxy);
+    DECL_BACKEND_IMPL_TYPE(Proxy);
+
+public:
+    /**
+     * @brief Read the [[ProxyTarget]] internal slot.
+     * @note  Host reflection, not part of the ECMAScript JS API.
+     *        Returns null after the proxy is revoked.
+     */
+    [[nodiscard]] Local<Value> target() const;
+
+    /**
+     * @brief Read the [[ProxyHandler]] internal slot.
+     * @note  Host reflection. Returns null after the proxy is revoked.
+     */
+    [[nodiscard]] Local<Value> handler() const;
 };
 
 #undef SPECIALIZATION_LOCAL

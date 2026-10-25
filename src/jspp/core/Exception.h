@@ -13,6 +13,14 @@
 namespace jspp {
 
 
+/**
+ * @brief Exception thrown by, or converted from, the scripting engine.
+ *
+ * @note Lifecycle: an Exception holds an engine handle inside. Create, copy
+ *       and destroy it while its Engine is alive, and catch engine errors
+ *       where load/eval/... is called. Storing an Exception past engine
+ *       destruction is undefined behavior.
+ */
 class Exception final : public std::exception {
 public:
     using Type = ExceptionType;

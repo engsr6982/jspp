@@ -22,3 +22,6 @@ CMakeSettings.json
 *.lib
 *.obj
 node_modules
+
+build-*/
+.zcode
