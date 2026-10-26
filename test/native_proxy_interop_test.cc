@@ -13,6 +13,14 @@
 #include <chrono>
 #ifdef _WIN32
 #include <process.h>
+
+JSPP_WARNING_GUARD_BEGIN
+#include <windows.h>
+JSPP_WARNING_GUARD_END
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#else
+#include <unistd.h>
 #endif
 #include <cstdlib>
 #include <filesystem>
@@ -123,6 +131,30 @@ void runFullGc(jspp::Engine& engine, int attempts = 12) {
 }
 
 std::string selfExePath() {
+    // Resolve the current executable independent of the working directory and
+    // the build layout (single/multi-config generators, with/without the
+    // .exe suffix).
+#if defined(_WIN32)
+    char buffer[MAX_PATH];
+    if (GetModuleFileNameA(nullptr, buffer, MAX_PATH) > 0) {
+        return buffer;
+    }
+#elif defined(__APPLE__)
+    uint32_t    size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::string buffer(size, '\0');
+    if (_NSGetExecutablePath(buffer.data(), &size) == 0) {
+        return buffer;
+    }
+#else
+    char buffer[4096];
+    auto len = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
+    if (len > 0) {
+        buffer[len] = '\0';
+        return buffer;
+    }
+#endif
+    // Fallback for platforms without the APIs above.
     for (auto const* rel : {"bin/jspp_test.exe", "../bin/jspp_test.exe", "./jspp_test.exe"}) {
         if (std::filesystem::exists(rel)) {
             return std::filesystem::absolute(rel).string();
@@ -295,15 +327,25 @@ TEST_CASE_METHOD(NativeInteropFixture, "NativeInterop: invalid receivers are rej
 
 
 // ===========================================================================
-// A4: same-field-count foreign object (fatal-prone, executed in a child process)
+// A receiver built by a foreign engine template with the same internal field
+// count as jspp classes.
+//
+// Before the receiver checks were added, reading such an object's fields
+// could abort the process outright (V8 terminates on out-of-bounds internal
+// field access), which the test framework cannot catch. This case therefore
+// only performs its work when spawned as a dedicated child process: a
+// regression shows up as the wrapper case below failing, while the rest of
+// the suite still reports normally.
+//
+// The foreign receiver is driven through the method, the descriptor getter
+// and the descriptor setter, through the native-instance conversion, and
+// through trySetReferenceInternal; every path must reject it safely without
+// reading or writing the stored foreign pointer.
 // ===========================================================================
 
 TEST_CASE_METHOD(NativeInteropFixture, "NativeInterop: foreign receiver trio") {
     using namespace jspp;
 
-    // A same-field-count foreign receiver could crash the process before
-    // the receiver checks existed, so this case only performs its work when
-    // spawned as a dedicated child process (see the wrapper case below).
     if (!interopChildMode()) {
         SUCCEED("runs only in the dedicated child process");
         return;
