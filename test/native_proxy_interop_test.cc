@@ -417,7 +417,9 @@ TEST_CASE_METHOD(NativeInteropFixture, "NativeInterop: fatal-prone receiver case
     _putenv("JSPP_INTEROP_CHILD=");
 #else
     setenv("JSPP_INTEROP_CHILD", "1", 1);
-    auto command = "\"" + exe + "\" \"NativeInterop: foreign receiver trio\"";
+    // Single quotes: neither the path nor the filter contains characters that
+    // need escaping inside them.
+    auto command = "'" + exe + "' 'NativeInterop: foreign receiver trio'";
     auto code    = std::system(command.c_str());
     unsetenv("JSPP_INTEROP_CHILD");
 #endif
