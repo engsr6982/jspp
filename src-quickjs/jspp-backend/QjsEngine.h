@@ -60,6 +60,13 @@ enum class QjsInitializeFlags {
      *        - import specifiers ending in ".bin" are loaded as bytecode modules;
      *        - when a specifier resolves to a missing ".js" file, the loader falls
      *          back to the sibling ".bin" file (bytecode deployments).
+     *
+     * Bytecode files embed a checksum and a format version, so a .bin is only
+     * readable by the quickjs build that produced it. The blob format is
+     * single-module: one JS_ReadObject call must receive exactly one
+     * serialized module, while qjsc -b writes one blob per compiled module.
+     * The scriptc tool (JSPP_BUILD_TOOLS) links the quickjs library of this
+     * runtime and emits single-blob output for this loader.
      * @note if set NoModuleLoader, this flag will be ignored.
      */
     EnableBytecodeImport = 1 << 6,
