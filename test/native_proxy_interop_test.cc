@@ -144,7 +144,10 @@ std::string selfExePath() {
     _NSGetExecutablePath(nullptr, &size);
     std::string buffer(size, '\0');
     if (_NSGetExecutablePath(buffer.data(), &size) == 0) {
-        return buffer;
+        // The buffer holds a C string including the terminating NUL; build
+        // from c_str() so the embedded NUL does not stay inside the string
+        // (it would truncate any later shell command built from the path).
+        return std::string(buffer.c_str());
     }
 #else
     char buffer[4096];
@@ -408,6 +411,8 @@ TEST_CASE_METHOD(NativeInteropFixture, "NativeInterop: fatal-prone receiver case
     // must not take down the whole suite.
     auto exe = selfExePath();
     REQUIRE_FALSE(exe.empty());
+    // An embedded NUL would silently truncate the shell command built below.
+    REQUIRE(exe.find('\0') == std::string::npos);
 
 #ifdef _WIN32
     _putenv("JSPP_INTEROP_CHILD=1");
