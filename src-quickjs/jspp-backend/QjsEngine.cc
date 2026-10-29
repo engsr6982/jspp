@@ -178,6 +178,7 @@ void QjsEngine::dispose() {
         staticClassObject_.clear();
         enumObject_.clear();
         module2meta_.clear();
+        bytecodeContainer_.reset();
 
         JS_FreeAtom(context_, nativeFunctionTag_);
         JS_FreeAtom(context_, toStringTagSymbolAtom_);
@@ -223,17 +224,17 @@ void QjsEngine::pumpPendingJobs() {
 
 JobQueue* QjsEngine::getJobQueue() const { return queue_.get(); }
 
-Local<Value> QjsEngine::loadByteCode(std::filesystem::path const& path, bool main) {
-    auto result = performLoadByteCode(path, main, nullptr);
+Local<Value> QjsEngine::loadByteCodeContainer(std::filesystem::path const& path, bool main) {
+    auto result = performLoadByteCodeContainer(path, main, nullptr);
     return ValueHelper::wrap<Value>(result);
 }
 
-Local<Object> QjsEngine::loadByteCodeNamespace(std::filesystem::path const& path, bool main) {
+Local<Object> QjsEngine::loadByteCodeContainerNamespace(std::filesystem::path const& path, bool main) {
     JSModuleDef* module = nullptr;
-    auto         result = performLoadByteCode(path, main, &module);
+    auto         result = performLoadByteCodeContainer(path, main, &module);
     if (!module) {
         JS_FreeValue(context_, result);
-        throw Exception("bytecode is not a module: " + path.string());
+        throw Exception("container entry is not a module: " + path.string());
     }
 
     // The namespace object holds the live bindings of the module exports
@@ -243,37 +244,40 @@ Local<Object> QjsEngine::loadByteCodeNamespace(std::filesystem::path const& path
     return ValueHelper::wrap<Object>(ns);
 }
 
-JSValue QjsEngine::performLoadByteCode(std::filesystem::path const& path, bool main, JSModuleDef** outModule) {
-    std::ifstream ifs{path, std::ios::binary};
-    if (!ifs) {
-        throw std::runtime_error("Failed to open binary file: " + path.string());
-    }
-    auto buffer = std::vector<uint8_t>((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    ifs.close();
-
-    JSValue obj = JS_ReadObject(context_, buffer.data(), buffer.size(), JS_READ_OBJ_BYTECODE);
-    QjsHelper::rethrowException(obj);
-
-    if (JS_VALUE_GET_TAG(obj) == JS_TAG_MODULE) {
-        if (JS_ResolveModule(context_, obj) < 0) {
-            JS_FreeValue(context_, obj);
-            QjsHelper::rethrowException(-1, "Failed to resolve module");
-        }
-        auto url = path.is_absolute() ? path.string() : std::filesystem::absolute(path).string();
+/**
+ * @brief Link, annotate and evaluate a loaded module value.
+ *
+ * Ownership contract: this function takes over @p obj on every path. The
+ * quickjs calls below either consume it (JS_EvalFunction) or release it before
+ * converting a failure into a C++ exception, so no caller-side release is
+ * needed afterwards, and none is allowed.
+ */
+JSValue QjsEngine::performEvaluateModule(JSValue obj, JSModuleDef* module, std::string const& url, bool main) {
+    // the URL string preparation is the one stretch where a C++ exception can
+    // escape before any quickjs call below has taken or released obj: the
+    // caller has already handed ownership over, so this stretch must release
+    // it first
+    std::string prefixedUrl;
+    try {
+        prefixedUrl = url;
 #ifdef _WIN32
-        std::replace(url.begin(), url.end(), '\\', '/');
+        std::replace(prefixedUrl.begin(), prefixedUrl.end(), '\\', '/');
 #endif
-        if (!url.starts_with(QjsModuleLoader::kFileUrlPrefix)) {
-            url = std::string{QjsModuleLoader::kFileUrlPrefix} + url;
+        if (!prefixedUrl.starts_with(QjsModuleLoader::kFileUrlPrefix)) {
+            prefixedUrl.insert(0, QjsModuleLoader::kFileUrlPrefix);
         }
-        auto module = static_cast<JSModuleDef*>(JS_VALUE_GET_PTR(obj));
-        if (!QjsModuleLoader::setImportMeta(context_, module, url, main)) {
-            JS_FreeValue(context_, obj);
-            QjsHelper::rethrowException(-1, "Failed to set import meta");
-        }
-        if (outModule) {
-            *outModule = module;
-        }
+    } catch (...) {
+        JS_FreeValue(context_, obj);
+        throw;
+    }
+
+    if (JS_ResolveModule(context_, obj) < 0) {
+        JS_FreeValue(context_, obj);
+        QjsHelper::rethrowException(-1, "Failed to resolve module");
+    }
+    if (!QjsModuleLoader::setImportMeta(context_, module, prefixedUrl, main)) {
+        JS_FreeValue(context_, obj);
+        QjsHelper::rethrowException(-1, "Failed to set import meta");
     }
 
     // A module evaluates to a promise, the module definition stays alive in the context
@@ -288,13 +292,207 @@ JSValue QjsEngine::performLoadByteCode(std::filesystem::path const& path, bool m
         JS_Throw(context_, msg);                      // Throw a pending exception
         qjs_backend::QjsHelper::rethrowException(-1); // Handle pending exception
     }
-    if (outModule && state == JSPromiseStateEnum::JS_PROMISE_PENDING) {
-        JS_FreeValue(context_, obj);
-        throw Exception("module is not settled, top-level await is not supported");
-    }
-
     pumpPendingJobs();
     return obj;
+}
+
+namespace {
+
+std::string containerEntryUrl(std::string const& containerPath) {
+    std::string abs = std::filesystem::absolute(containerPath).string();
+#ifdef _WIN32
+    std::replace(abs.begin(), abs.end(), '\\', '/');
+#endif
+    auto url = std::string{QjsModuleLoader::kFileUrlPrefix};
+    if (!abs.starts_with('/')) {
+        url += '/';
+    }
+    url += abs;
+    return url;
+}
+
+} // namespace
+
+JSValue QjsEngine::performLoadByteCodeContainer(std::filesystem::path const& path, bool main, JSModuleDef** outModule) {
+    std::ifstream ifs{path, std::ios::binary};
+    if (!ifs) {
+        throw std::runtime_error("Failed to open container file: " + path.string());
+    }
+    auto buffer = std::vector<uint8_t>((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    ifs.close();
+
+    nonstd::BytecodeContainer container;
+    std::string               parseError;
+    try {
+        container = nonstd::parseBytecodeContainer(buffer);
+    } catch (std::runtime_error const& e) {
+        // the handler records the message; the jspp exception is thrown after
+        // the handler has exited. Throwing new C++ exceptions from inside a
+        // catch handler crashes stack unwinding with this toolchain's dynamic
+        // ASAN runtime (clang-cl): reproduction = the build-asan jspp_test
+        // running the [bytecode-container] engine cases, which enter this
+        // handler on their malformed-container sub-cases. Plain C++ builds
+        // unwind the same code fine, hence the targeted workaround.
+        parseError = e.what();
+    }
+    if (!parseError.empty()) {
+        throw Exception(parseError + ": " + path.string());
+    }
+    return performLoadByteCodeContainerImpl(std::move(container), path.string(), main, outModule);
+}
+
+JSValue QjsEngine::performLoadByteCodeContainerImpl(
+    nonstd::BytecodeContainer&& container,
+    std::string const&          containerPath,
+    bool                        main,
+    JSModuleDef**               outModule
+) {
+    // One container per engine: a container is one compiled module graph
+    // (scriptc bundles the entry and its whole dependency closure) with one
+    // lifecycle, so a second load is rejected before anything is deserialized.
+    if (bytecodeContainer_.has_value()) {
+        throw Exception("engine already loaded a bytecode container: " + bytecodeContainer_->entrySource);
+    }
+
+    // Deserialization resolves each module's dependencies inline (JS_ReadModule
+    // calls the host resolver for every recorded import), so the tables must be
+    // registered before any blob is read.
+    //
+    // A failed load is NOT transactional: quickjs offers no public API to
+    // unregister a module definition, so modules deserialized before the
+    // failure stay registered in ctx->loaded_modules. The container mapping is
+    // therefore kept as well, which keeps the two views consistent: the
+    // surviving modules still resolve through the import tables, while names
+    // that were never deserialized are rejected by the loader with an explicit
+    // error.
+    container.entrySource = containerPath;
+    bytecodeContainer_.emplace(std::move(container));
+    auto& registered = *bytecodeContainer_;
+
+    auto entryUrl = containerEntryUrl(containerPath);
+
+    // Dependency-first read order: a blob's own imports must already be
+    // registered modules when JS_ReadObject inlines their resolution.
+    std::vector<std::string> names;
+    names.reserve(registered.modules.size());
+    for (auto const& m : registered.modules) {
+        names.push_back(m.name);
+    }
+    std::vector<std::uint32_t> order;
+    std::string                orderError;
+    try {
+        order = containerReadOrder(names, registered.imports);
+    } catch (std::runtime_error const& e) {
+        // record now, throw after the handler exits (see the ASAN unwinding
+        // note in performLoadByteCodeContainer)
+        orderError = e.what();
+    }
+    if (!orderError.empty()) {
+        // nothing was deserialized yet: dropping the mapping here keeps the
+        // engine exactly as before the call
+        bytecodeContainer_.reset();
+        throw Exception(orderError);
+    }
+
+    // js_new_module_def registers every deserialized def in
+    // ctx->loaded_modules under its baked name; releasing the reader's own
+    // reference leaves that registration alive.
+    //
+    // The guard owns every JSValue this function has taken from JS_ReadObject
+    // (the entry value and the dependency values) and is established before
+    // the deserialization loop starts, so a failed JS_ReadObject midway still
+    // releases the values read earlier. When the entry value moves into
+    // performEvaluateModule / JS_EvalFunction below, the field is set to
+    // JS_UNDEFINED first: the guard then holds nothing for the entry and the
+    // callee's ownership contract covers every path, including its exceptions.
+    JSValue              entryObj = JS_UNDEFINED;
+    JSModuleDef*         entryDef = nullptr;
+    std::vector<JSValue> dependencyRefs;
+    dependencyRefs.reserve(registered.modules.size());
+    auto fail = [&](std::string const& message) {
+        // pick up quickjs's pending exception (blob checksum mismatch, format
+        // version, ...) so the diagnostic carries the underlying cause and no
+        // pending state is left on the engine
+        std::string detail = message;
+        if (JS_HasException(context_)) {
+            auto        exc = JS_GetException(context_);
+            JSValue     msg = JS_GetPropertyStr(context_, exc, "message");
+            const char* m   = JS_ToCString(context_, msg);
+            if (m && *m) {
+                detail += ": " + std::string{m};
+            }
+            if (m) JS_FreeCString(context_, m);
+            JS_FreeValue(context_, msg);
+            JS_FreeValue(context_, exc);
+        }
+        throw Exception(detail);
+    };
+    struct OwnedValuesGuard {
+        std::vector<JSValue>& refs;
+        JSValue&              entryObj;
+        JSContext*            ctx;
+        ~OwnedValuesGuard() {
+            JS_FreeValue(ctx, entryObj);
+            for (auto v : refs) {
+                JS_FreeValue(ctx, v);
+            }
+        }
+    } valuesGuard{dependencyRefs, entryObj, context_};
+
+    for (auto index : order) {
+        auto const& entry = registered.modules[index];
+        auto        blob  = registered.payloadOf(entry);
+        JSValue     obj   = JS_ReadObject(context_, blob.data(), blob.size(), JS_READ_OBJ_BYTECODE);
+        if (JS_IsException(obj)) {
+            fail("Failed to read container module '" + entry.name + "' (deserialization stage)");
+        }
+        if (index == 0) {
+            // a container's entry may also be script bytecode (single section,
+            // no imports); only module entries expose a definition
+            if (JS_VALUE_GET_TAG(obj) == JS_TAG_MODULE) {
+                entryDef = static_cast<JSModuleDef*>(JS_VALUE_GET_PTR(obj));
+            }
+            entryObj = obj;
+        } else {
+            // v1 semantics: only the entry module gets import.meta (url of the
+            // container file, main flag). Dependency modules keep the
+            // deserialized defaults, so their import.meta.url and .main are
+            // undefined; a dependency cannot address a container file URL
+            // anyway, since several containers may share one file.
+            dependencyRefs.push_back(obj);
+        }
+    }
+
+    JSValue result = JS_UNDEFINED;
+    if (entryDef != nullptr) {
+        // hand the entry value over before the call: performEvaluateModule
+        // owns it on every path (see its contract), so the guard must no
+        // longer release it
+        JSValue entryValue = entryObj;
+        entryObj           = JS_UNDEFINED;
+        result             = performEvaluateModule(entryValue, entryDef, entryUrl, main);
+        // dependency refs stay alive (until the guard) and keep their
+        // registered defs queryable
+        if (outModule && JS_PromiseState(context_, result) == JSPromiseStateEnum::JS_PROMISE_PENDING) {
+            // the entry (and any dependency) has started evaluating at this
+            // point: side effects are real and the registration stays. The
+            // pending evaluation promise is a caller-held value and must not
+            // leak (same ownership rule as the plain module path).
+            JS_FreeValue(context_, result);
+            throw Exception("module is not settled, top-level await is not supported");
+        }
+    } else {
+        // script bytecode: JS_EvalFunction takes over the entry value
+        JSValue entryValue = entryObj;
+        entryObj           = JS_UNDEFINED;
+        result             = JS_EvalFunction(context_, entryValue);
+        QjsHelper::rethrowException(result);
+    }
+
+    if (outModule) {
+        *outModule = entryDef;
+    }
+    return result;
 }
 
 bool QjsModuleLoader::setImportMeta(
@@ -350,6 +548,32 @@ char* QjsModuleLoader::normalize(
         return js_strdup(ctx, importSpecifier);
     }
 
+    // scriptc bytecode containers: relative imports issued by container
+    // modules resolve through the registered import tables, never through the
+    // file system (portable deployment). Check runs before the non-relative
+    // specifier rejection so container-internal names cannot collide with it.
+    if (sv_specifier.starts_with("./") || sv_specifier.starts_with("../")) {
+        if (auto const& container = engine->bytecodeContainer_) {
+            if (container->findModule(sv_source) == nullptr) {
+                // importer is not a module of the container
+            } else if (auto const* edge = container->findImport(sv_source, sv_specifier)) {
+                auto const& target = container->modules[edge->targetIndex].name;
+                return js_strdup(ctx, target.c_str());
+            } else {
+                // A container module's relative import missing from the import
+                // table cannot be satisfied portably: report instead of falling
+                // back to the current working directory.
+                JS_ThrowReferenceError(
+                    ctx,
+                    "module not found in bytecode container: '%s' (from '%s')",
+                    importSpecifier,
+                    importingModule
+                );
+                return nullptr;
+            }
+        }
+    }
+
     // <...>
     if (sv_source.starts_with('<') && sv_source.ends_with('>')) {
         if (!sv_specifier.starts_with("/") && !sv_specifier.starts_with(kFileUrlPrefix)) {
@@ -400,22 +624,8 @@ char* QjsModuleLoader::normalize(
     }
 
     if (!std::filesystem::is_regular_file(final_path)) {
-        // Bytecode deployment fallback (non-standard, opt-in via EnableBytecodeImport):
-        // scripts ship only as quickjs bytecode (.bin) while import specifiers keep the
-        // ".js" extension — resolve to the sibling .bin.
-        auto resolved = false;
-        if (hasFlag(engine->flags_, QjsInitializeFlags::EnableBytecodeImport) && final_path.extension() == ".js") {
-            auto binPath = final_path;
-            binPath.replace_extension(".bin");
-            if (std::filesystem::is_regular_file(binPath)) {
-                final_path = std::move(binPath);
-                resolved   = true;
-            }
-        }
-        if (!resolved) {
-            JS_ThrowPlainError(ctx, "module not found: %s", final_path.string().c_str());
-            return nullptr;
-        }
+        JS_ThrowPlainError(ctx, "module not found: %s", final_path.string().c_str());
+        return nullptr;
     }
 
     std::string gen_path  = final_path.generic_string();
@@ -434,6 +644,23 @@ JSModuleDef* QjsModuleLoader::loader(JSContext* ctx, const char* specifier, void
         return performNewNativeModule(engine, meta);
     }
 
+    // A container table name reaching the loader means the corresponding
+    // module definition was never registered: either the container load
+    // failed midway or the tables reference a name that was never
+    // deserialized. Report explicitly instead of returning nullptr without a
+    // pending exception (which quickjs would report as a bare load failure).
+    if (auto const& container = engine->bytecodeContainer_) {
+        if (container->findModule(specifier) != nullptr) {
+            JS_ThrowReferenceError(
+                ctx,
+                "module not registered in bytecode container: '%s' "
+                "(the container load that provides it failed)",
+                specifier
+            );
+            return nullptr;
+        }
+    }
+
     namespace fs = std::filesystem;
     if (std::strncmp(specifier, kFileUrlPrefix.data(), kFileUrlPrefix.size()) == 0) {
         std::string url = specifier + kFileUrlPrefix.size(); // remove "file://"
@@ -450,9 +677,6 @@ JSModuleDef* QjsModuleLoader::loader(JSContext* ctx, const char* specifier, void
         auto ext = modulePath.extension();
         if (ext == QJS_NATIVE_MODULE_SUFFIX) {
             return performLoadCModule(engine, modulePath, specifier);
-        }
-        if (ext == ".bin") {
-            return performLoadByteCodeModule(engine, modulePath, specifier);
         }
         if (type == ImportAttrType::Json) {
             return performLoadJsonModule(engine, modulePath, specifier);
@@ -576,39 +800,6 @@ QjsModuleLoader::performLoadJsonModule(Engine* engine, std::filesystem::path con
     JS_AddModuleExport(engine->context_, m, kDefaultExport.data());
     JS_SetModulePrivateValue(engine->context_, m, v);
     return m;
-}
-JSModuleDef*
-QjsModuleLoader::performLoadByteCodeModule(Engine* engine, std::filesystem::path const& path, const char* specifier) {
-    if (!hasFlag(engine->flags_, QjsInitializeFlags::EnableBytecodeImport)) {
-        JS_ThrowPlainError(engine->context_, "bytecode import is disabled");
-        return nullptr;
-    }
-    auto ifs = std::ifstream{path, std::ios::binary};
-    if (!ifs) [[unlikely]] {
-        JS_ThrowPlainError(engine->context_, "module not found: %s", path.string().c_str());
-        return nullptr;
-    }
-    auto buffer = std::vector<uint8_t>((std::istreambuf_iterator<char>{ifs}), std::istreambuf_iterator<char>{});
-    ifs.close();
-
-    auto v = JS_ReadObject(engine->context_, buffer.data(), buffer.size(), JS_READ_OBJ_BYTECODE);
-    if (JS_IsException(v)) {
-        return nullptr;
-    }
-    if (JS_VALUE_GET_TAG(v) == JS_TAG_MODULE) {
-        if (JS_ResolveModule(engine->context_, v) < 0) {
-            JS_FreeValue(engine->context_, v);
-            JS_ThrowPlainError(engine->context_, "failed to resolve module %s", specifier);
-            return nullptr;
-        }
-        auto m = (JSModuleDef*)JS_VALUE_GET_PTR(v);
-        JS_FreeValue(engine->context_, v);
-        (void)setImportMeta(engine->context_, m, specifier);
-        return m;
-    }
-    JS_FreeValue(engine->context_, v);
-    JS_ThrowPlainError(engine->context_, "cannot load module %s", specifier);
-    return nullptr;
 }
 JSModuleDef*
 QjsModuleLoader::performLoadScriptModule(Engine* engine, std::filesystem::path const& path, const char* specifier) {

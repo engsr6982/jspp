@@ -9,6 +9,9 @@
 #include <optional>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
+
+#include "BytecodeContainer.h"
 
 JSPP_WARNING_GUARD_BEGIN
 #include "quickjs.h"
@@ -54,22 +57,6 @@ enum class QjsInitializeFlags {
 
     /** @brief Disable automatic garbage collection in QjsEngine::dispose */
     NoGcInDispose = 1 << 5,
-
-    /**
-     * @brief Enable quickjs bytecode (.bin) module imports:
-     *        - import specifiers ending in ".bin" are loaded as bytecode modules;
-     *        - when a specifier resolves to a missing ".js" file, the loader falls
-     *          back to the sibling ".bin" file (bytecode deployments).
-     *
-     * Bytecode files embed a checksum and a format version, so a .bin is only
-     * readable by the quickjs build that produced it. The blob format is
-     * single-module: one JS_ReadObject call must receive exactly one
-     * serialized module, while qjsc -b writes one blob per compiled module.
-     * The scriptc tool (JSPP_BUILD_TOOLS) links the quickjs library of this
-     * runtime and emits single-blob output for this loader.
-     * @note if set NoModuleLoader, this flag will be ignored.
-     */
-    EnableBytecodeImport = 1 << 6,
 
     /** @brief Combination for safe embedding in existing QuickJS environments. */
     AddonMode = NoModuleLoader | NoFreeRuntime | NoFreeContext | NoJobQueuePosting | NoGcInDispose
@@ -120,15 +107,38 @@ public:
 
     [[nodiscard]] JobQueue* getJobQueue() const;
 
-    Local<Value> loadByteCode(std::filesystem::path const& path, bool main = false);
+    /**
+     * Load a scriptc bytecode container ('JSC1') and evaluate its entry module.
+     * The container's module table and import table stay registered on this
+     * engine: relative imports issued by container modules resolve through the
+     * tables for the engine's lifetime, without touching the file system.
+     * @param path Container file produced by the scriptc tool.
+     * @param main Value of import.meta.main for the entry module.
+     * @return The evaluation result of the entry module (a promise).
+     * @note Throws on malformed containers (bad magic, version, checksum,
+     *       truncated tables) and on cyclic import graphs (defensive: scriptc
+     *       already rejects cycles at compile time).
+     * @note An engine holds exactly one container: a second loadByteCodeContainer
+     *       call (reloading the same file or loading another container) is
+     *       rejected. A container is one compiled module graph with one
+     *       lifecycle; splitting a project into several containers for one VM
+     *       is not a supported deployment.
+     * @note A failed load is not transactional: quickjs has no public API to
+     *       unregister module definitions, so modules deserialized before the
+     *       failure stay registered and their container mapping stays with
+     *       them (their relative imports keep resolving through the tables;
+     *       never-deserialized names are rejected explicitly). Modules already
+     *       evaluating when the failure occurs (link errors, top-level await)
+     *       have run their side effects.
+     */
+    Local<Value> loadByteCodeContainer(std::filesystem::path const& path, bool main = true);
 
     /**
-     * Load a bytecode module and return its module namespace object
-     * (the same object as `import * as ns from ...` in JS).
-     * @note Throws if the module does not finish evaluating synchronously (e.g. top-level await).
-     * @note Throws if the bytecode is not a module (e.g. script bytecode).
+     * Load a scriptc bytecode container and return the entry module's
+     * namespace object (the same object as `import * as entry from ...`).
+     * @note See loadByteCodeContainer() for container semantics.
      */
-    Local<Object> loadByteCodeNamespace(std::filesystem::path const& path, bool main = false);
+    Local<Object> loadByteCodeContainerNamespace(std::filesystem::path const& path, bool main = true);
 
 protected:
     [[nodiscard]] Engine*       asEngine();
@@ -137,10 +147,25 @@ protected:
     void initContext();
 
     /**
-     * Read and evaluate bytecode, returning the evaluation result (a promise for modules).
-     * @param outModule When non-null, receives the module definition (nullptr for script bytecode).
+     * Container load core: parse a container file, deserialize every module
+     * blob in dependency-first order and evaluate the entry module. The
+     * container stays registered on the engine.
      */
-    JSValue performLoadByteCode(std::filesystem::path const& path, bool main, JSModuleDef** outModule);
+    JSValue performLoadByteCodeContainer(std::filesystem::path const& path, bool main, JSModuleDef** outModule);
+
+    /** @brief Shared core of both overloads; containerPath feeds import.meta.url of the entry. */
+    JSValue performLoadByteCodeContainerImpl(
+        nonstd::BytecodeContainer&& container,
+        std::string const&          containerPath,
+        bool                        main,
+        JSModuleDef**               outModule
+    );
+
+    /**
+     * Evaluate one loaded module value: link, set import.meta, run, and
+     * convert a rejected evaluation promise into a jspp exception.
+     */
+    JSValue performEvaluateModule(JSValue obj, JSModuleDef* module, std::string const& url, bool main);
 
     void setToStringTag(Local<Object>& obj, std::string_view name);
 
@@ -194,6 +219,10 @@ protected:
     std::unordered_map<EnumMeta const*, JSValue> enumObject_{}; // for native module lazy load
 
     std::unordered_map<JSModuleDef*, ModuleMeta const*> module2meta_{}; // fast lookup, avoid AtomToCString
+
+    // the single scriptc container registered on this engine
+    // (loadByteCodeContainer); a second load is rejected
+    std::optional<nonstd::BytecodeContainer> bytecodeContainer_{};
 };
 
 struct QjsModuleLoader {
@@ -221,12 +250,10 @@ struct QjsModuleLoader {
     enum class ImportAttrType { Unknown = 0, Js, Json };
     static ImportAttrType resolveImportAttr(JSContext* ctx, JSValueConst attr);
 
-    using QjsCModuleInitFunc                   = JSModuleDef* (*)(JSContext* ctx, const char* specifier);
+    using QjsCModuleInitFunc                   = JSModuleDef* (*)(JSContext * ctx, const char* specifier);
     inline static constexpr auto kCModuleEntry = "js_init_module";
     static JSModuleDef* performLoadCModule(Engine* engine, std::filesystem::path const& path, const char* specifier);
     static JSModuleDef* performLoadJsonModule(Engine* engine, std::filesystem::path const& path, const char* specifier);
-    static JSModuleDef*
-    performLoadByteCodeModule(Engine* engine, std::filesystem::path const& path, const char* specifier);
     static JSModuleDef*
     performLoadScriptModule(Engine* engine, std::filesystem::path const& path, const char* specifier);
 

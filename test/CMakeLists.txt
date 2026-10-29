@@ -56,4 +56,10 @@ if (${JSPP_BACKEND} STREQUAL "quickjs")
     else()
         message(FATAL_ERROR "QuickJS-ng source not found in deps/")
     endif()
+
+    # scriptc compile core (shared with the scriptc tool): the bytecode
+    # container tests build their container fixtures in process, which keeps
+    # the fixtures version-locked to the quickjs build under test
+    target_sources(jspp_test PRIVATE ${CMAKE_SOURCE_DIR}/src-quickjs/tools/scriptc_core.cc)
+    target_include_directories(jspp_test PRIVATE ${CMAKE_SOURCE_DIR}/src-quickjs/tools)
 endif()
