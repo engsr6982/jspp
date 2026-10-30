@@ -96,12 +96,13 @@ Like pybind11, jspp provides fine-grained lifetime control when passing complex 
 
 ## 🔨 Building
 
-| flag                | Allowed Values   | Default | Required | Description                                |
-| ------------------- | ---------------- | ------- | -------- | ------------------------------------------ |
-| `JSPP_BACKEND`      | `v8` / `quickjs` | `v8`    | Optional | Specifies the backend engine.              |
-| `JSPP_EXTERNAL_INC` | N/A              | N/A     | Optional | Specifies additional header include paths. |
-| `JSPP_EXTERNAL_LIB` | N/A              | N/A     | Optional | Specifies additional static library paths. |
-| `JSPP_BUILD_TESTS`  | `ON` / `OFF`     | `OFF`   | Optional | Whether to build the test suite.           |
+| flag                | Allowed Values   | Default | Required | Description                                                                |
+| ------------------- | ---------------- | ------- | -------- | -------------------------------------------------------------------------- |
+| `JSPP_BACKEND`      | `v8` / `quickjs` | `v8`    | Optional | Specifies the backend engine.                                              |
+| `JSPP_EXTERNAL_INC` | N/A              | N/A     | Optional | Specifies additional header include paths.                                 |
+| `JSPP_EXTERNAL_LIB` | N/A              | N/A     | Optional | Specifies additional static library paths.                                 |
+| `JSPP_BUILD_TESTS`  | `ON` / `OFF`     | `OFF`   | Optional | Whether to build the test suite.                                           |
+| `JSPP_BUILD_TOOLS`  | `ON` / `OFF`     | `OFF`   | Optional | Whether to build a toolset (currently, only the qjs backend has a toolset) |
 
 ## 📋 Common Usage Scenario Compatibility
 
