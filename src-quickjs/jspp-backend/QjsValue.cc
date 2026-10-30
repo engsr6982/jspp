@@ -1,5 +1,6 @@
 #include "QjsEngine.h"
 #include "QjsHelper.h"
+#include "jspp-backend/QjsHelper.h"
 #include "jspp/Macro.h"
 #include "jspp/core/Engine.h"
 #include "jspp/core/EngineScope.h"
@@ -63,25 +64,22 @@ Local<BigInt> BigInt::newBigIntUnsigned(uint64_t i) {
 }
 
 
-Local<String> String::newString(const char* str) { return newString(std::string_view{str}); }
-Local<String> String::newString(std::string const& str) { return newString(std::string_view{str}); }
-Local<String> String::newString(std::string_view sv) {
+MaybeLocal<String> String::newString(const char* str) { return newString(std::string_view{str}); }
+MaybeLocal<String> String::newString(std::string const& str) { return newString(std::string_view{str}); }
+MaybeLocal<String> String::newString(std::string_view sv) {
     auto ctx = qjs_backend::QjsHelper::currentContextChecked();
 
     auto str = JS_NewStringLen(ctx, sv.data(), sv.size());
-    qjs_backend::QjsHelper::rethrowException(str);
-
-    return Local<String>{str};
+    return qjs_backend::QjsHelper::asMaybeLocal<String>(str);
 }
 
-Local<Symbol> Symbol::newSymbol() {
+MaybeLocal<Symbol> Symbol::newSymbol() {
     // The Symbol API of QuickJs-NG does not support Symbols without descriptions
     auto ctx = qjs_backend::QjsHelper::currentContextChecked();
 #if QJS_VERSION_MAJOR > 0 || (QJS_VERSION_MAJOR == 0 && QJS_VERSION_MINOR >= 15)
     // v0.15.0+ fast path (PR #1447) — safe to pass NULL
     auto sym = JS_NewSymbol(ctx, nullptr, false);
-    qjs_backend::QjsHelper::rethrowException(sym);
-    return Local<Symbol>{sym};
+    return qjs_backend::QjsHelper::asMaybeLocal<Symbol>(sym);
 #else
     // fallback
     // TODO: PR #1447 has been merged into the QuickJs-NG mainline.
@@ -90,26 +88,32 @@ Local<Symbol> Symbol::newSymbol() {
     auto global  = JS_GetGlobalObject(ctx);
     auto symCtor = JS_GetPropertyStr(ctx, global, "Symbol");
     JS_FreeValue(ctx, global);
-    qjs_backend::QjsHelper::rethrowException(symCtor);
+    if (qjs_backend::QjsHelper::isException(symCtor)) {
+        return qjs_backend::QjsHelper::asMaybeLocal<Symbol>(symCtor);
+    }
 
     auto sym = JS_Call(ctx, symCtor, JS_UNDEFINED, 0, nullptr);
     JS_FreeValue(ctx, symCtor);
-    qjs_backend::QjsHelper::rethrowException(sym);
-    EngineScope::currentEngineChecked().pumpPendingJobs();
-    return Local<Symbol>{sym};
+
+    auto ret = qjs_backend::QjsHelper::asMaybeLocal<Symbol>(sym);
+    if (ret) {
+        EngineScope::currentEngineChecked().pumpPendingJobs();
+    }
+    return ret;
 #endif
 }
-Local<Symbol> Symbol::newSymbol(std::string_view description) {
+MaybeLocal<Symbol> Symbol::newSymbol(std::string_view description) {
     auto ctx = qjs_backend::QjsHelper::currentContextChecked();
     // is_global = true => Symbol.for()
     auto sym = JS_NewSymbol(ctx, description.data(), false);
-    qjs_backend::QjsHelper::rethrowException(sym);
-    return Local<Symbol>{sym};
+    return qjs_backend::QjsHelper::asMaybeLocal<Symbol>(sym);
 }
-Local<Symbol> Symbol::newSymbol(const char* description) { return newSymbol(std::string_view{description}); }
-Local<Symbol> Symbol::newSymbol(std::string const& description) { return newSymbol(std::string_view{description}); }
+MaybeLocal<Symbol> Symbol::newSymbol(const char* description) { return newSymbol(std::string_view{description}); }
+MaybeLocal<Symbol> Symbol::newSymbol(std::string const& description) {
+    return newSymbol(std::string_view{description});
+}
 
-Local<Symbol> Symbol::forKey(Local<String> const& str) {
+MaybeLocal<Symbol> Symbol::forKey(Local<String> const& str) {
     auto ctx = qjs_backend::QjsHelper::currentContextChecked();
     // Since quickjs-ng does not export the JS_NewSymbolFromAtom interface,
     //  we can only fall back to the upper-level interface here.
@@ -117,18 +121,19 @@ Local<Symbol> Symbol::forKey(Local<String> const& str) {
     // TODO: To be optimized.
     auto stdStr = str.getValue();
     auto sym    = JS_NewSymbol(ctx, stdStr.data(), true);
-    qjs_backend::QjsHelper::rethrowException(sym);
-    return Local<Symbol>{sym};
+    return qjs_backend::QjsHelper::asMaybeLocal<Symbol>(sym);
 }
 
 
-Local<Function> Function::newFunction(FunctionCallback&& cb) {
+MaybeLocal<Function> Function::newFunction(FunctionCallback&& cb) {
     auto ptr = std::make_unique<FunctionCallback>(std::move(cb));
 
     auto& engine = EngineScope::currentEngineChecked();
 
     auto data = JS_NewObjectClass(engine.context_, engine.functionDataClassId_);
-    qjs_backend::QjsHelper::rethrowException(data);
+    if (qjs_backend::QjsHelper::isException(data)) {
+        return qjs_backend::QjsHelper::asMaybeLocal<Function>(data);
+    }
     JS_SetOpaque(data, ptr.release());
 
     auto engineOpaque = engine.newPointerData(&engine);
@@ -169,31 +174,31 @@ Local<Function> Function::newFunction(FunctionCallback&& cb) {
         args.data()
     );
     for (auto& arg : args) JS_FreeValue(engine.context_, arg);
-    qjs_backend::QjsHelper::rethrowException(func);
-    return Local<Function>{func};
+    return qjs_backend::QjsHelper::asMaybeLocal<Function>(func);
 }
 
 
-Local<Object> Object::newObject() {
+MaybeLocal<Object> Object::newObject() {
     auto ctx = qjs_backend::QjsHelper::currentContextChecked();
     auto obj = JS_NewObject(ctx);
-    qjs_backend::QjsHelper::rethrowException(obj);
-    return Local<Object>{obj};
+    return qjs_backend::QjsHelper::asMaybeLocal<Object>(obj);
 }
 
 
-Local<Array> Array::newArray(size_t length) {
+MaybeLocal<Array> Array::newArray(size_t length) {
     auto ctx   = qjs_backend::QjsHelper::currentContextChecked();
     auto array = JS_NewArray(ctx);
-    qjs_backend::QjsHelper::rethrowException(array);
+    if (qjs_backend::QjsHelper::isException(array)) {
+        return qjs_backend::QjsHelper::asMaybeLocal<Array>(array);
+    }
     if (length > 0) {
         auto code = JS_SetLength(ctx, array, static_cast<int64_t>(length));
         if (code < 0) [[unlikely]] {
             JS_FreeValue(ctx, array);
-            qjs_backend::QjsHelper::rethrowException(code);
+            return qjs_backend::QjsHelper::asMaybeLocal<Array>(code);
         }
     }
-    return Local<Array>{array};
+    return ValueHelper::wrapMaybeLocal<Array>(array);
 }
 
 
@@ -201,7 +206,7 @@ PromiseResolver PromiseResolver::newResolver() {
     auto ctx = qjs_backend::QjsHelper::currentContextChecked();
 
     JSValue funcs[2]{};
-    auto   promise = JS_NewPromiseCapability(ctx, funcs);
+    auto    promise = JS_NewPromiseCapability(ctx, funcs);
     qjs_backend::QjsHelper::rethrowException(promise);
 
     PromiseResolver resolver;
@@ -251,11 +256,11 @@ void PromiseResolver::reject(Local<Value> const& reason) const {
     (void)impl_.reject_.get().call(Local<Value>{}, {reason});
 }
 
-Local<Proxy> Proxy::newProxy(Local<Object> const& target, Local<Object> const& handler) {
-    auto ctx   = qjs_backend::QjsHelper::currentContextChecked();
-    auto proxy = JS_NewProxy(ctx, qjs_backend::QjsHelper::peekValue(target), qjs_backend::QjsHelper::peekValue(handler));
-    qjs_backend::QjsHelper::rethrowException(proxy);
-    return ValueHelper::wrap<Proxy>(proxy); // owned reference
+MaybeLocal<Proxy> Proxy::newProxy(Local<Object> const& target, Local<Object> const& handler) {
+    auto ctx = qjs_backend::QjsHelper::currentContextChecked();
+    auto proxy =
+        JS_NewProxy(ctx, qjs_backend::QjsHelper::peekValue(target), qjs_backend::QjsHelper::peekValue(handler));
+    return qjs_backend::QjsHelper::asMaybeLocal<Proxy>(proxy);
 }
 
 Local<Value> Local<Proxy>::target() const {
@@ -282,22 +287,26 @@ Local<Value> Local<Proxy>::handler() const {
 PromiseState Local<Promise>::state() const {
     auto ctx = qjs_backend::QjsHelper::currentContextChecked();
     switch (JS_PromiseState(ctx, val)) {
-        case JS_PROMISE_PENDING: return PromiseState::kPending;
-        case JS_PROMISE_FULFILLED: return PromiseState::kFulfilled;
-        case JS_PROMISE_REJECTED: return PromiseState::kRejected;
-        default: [[unlikely]] throw Exception{"Local<Promise>::state(): value is not a promise"};
+    case JS_PROMISE_PENDING:
+        return PromiseState::kPending;
+    case JS_PROMISE_FULFILLED:
+        return PromiseState::kFulfilled;
+    case JS_PROMISE_REJECTED:
+        return PromiseState::kRejected;
+    default:
+        [[unlikely]] throw Exception{"Local<Promise>::state(): value is not a promise"};
     }
 }
 
-Local<Value> Local<Promise>::result() const {
+MaybeLocal<Value> Local<Promise>::result() const {
     auto ctx = qjs_backend::QjsHelper::currentContextChecked();
     if (JS_PromiseState(ctx, val) == JS_PROMISE_PENDING) {
-        throw Exception{"Local<Promise>::result(): promise is pending"};
+        return MaybeLocal<Value>::fromError("Local<Promise>::result(): promise is pending");
     }
     return Local<Value>{JS_PromiseResult(ctx, val)}; // returns a new reference
 }
 
-Local<Promise> Local<Promise>::then(Local<Function> const& onFulfilled, Local<Function> const& onRejected) const {
+MaybeLocal<Promise> Local<Promise>::then(Local<Function> const& onFulfilled, Local<Function> const& onRejected) const {
 #if QJS_VERSION_MAJOR > 0 || (QJS_VERSION_MAJOR == 0 && QJS_VERSION_MINOR >= 16)
     auto ctx = qjs_backend::QjsHelper::currentContextChecked();
     auto ret = JS_PromiseThen(
@@ -306,9 +315,11 @@ Local<Promise> Local<Promise>::then(Local<Function> const& onFulfilled, Local<Fu
         qjs_backend::QjsHelper::peekValue(onFulfilled),
         qjs_backend::QjsHelper::peekValue(onRejected)
     );
-    qjs_backend::QjsHelper::rethrowException(ret);
-    EngineScope::currentEngineChecked().pumpPendingJobs();
-    return ValueHelper::wrap<Promise>(ret);
+    auto maybe = qjs_backend::QjsHelper::asMaybeLocal<Promise>(ret);
+    if (maybe) {
+        EngineScope::currentEngineChecked().pumpPendingJobs();
+    }
+    return maybe;
 #else
     // Compatibility fallback for QuickJS-NG < 0.16.0.
     // WARNING: This path is NOT semantically equivalent to JS_PromiseThen.
@@ -319,13 +330,24 @@ Local<Promise> Local<Promise>::then(Local<Function> const& onFulfilled, Local<Fu
     //
     // TODO: Remove this fallback once the minimum supported QuickJS-NG
     // version is raised to >= 0.16.0.
-    auto thenFn = asValue().asObject().get(String::newString("then")).asFunction();
-    auto result = thenFn.call(asValue(), {onFulfilled.asValue(), onRejected.asValue()});
+    auto maybeObj = asValue().asObject();
+    if (!maybeObj) {
+        return MaybeLocal<Promise>::forward(maybeObj);
+    }
+    auto thenFnName = String::newString("then");
+    if (!thenFnName) {
+        return MaybeLocal<Promise>::fromError("Local<Promise>::then(): failed to allocate 'then' string");
+    }
+    auto thenFn = maybeObj.toLocal().get(thenFnName.toLocal()).asFunction();
+    if (!thenFn) {
+        return MaybeLocal<Promise>::fromError("Local<Promise>::then(): 'then' is not a function");
+    }
+    auto result = thenFn.toLocal().call(asValue(), {onFulfilled.asValue(), onRejected.asValue()});
     return result.as<Promise>();
 #endif
 }
 
-Local<Promise> Local<Promise>::then(Local<Function> const& onFulfilled) const {
+MaybeLocal<Promise> Local<Promise>::then(Local<Function> const& onFulfilled) const {
 #if QJS_VERSION_MAJOR > 0 || (QJS_VERSION_MAJOR == 0 && QJS_VERSION_MINOR >= 16)
     auto ctx = qjs_backend::QjsHelper::currentContextChecked();
     auto ret = JS_PromiseThen(ctx, val, qjs_backend::QjsHelper::peekValue(onFulfilled), JS_UNDEFINED);

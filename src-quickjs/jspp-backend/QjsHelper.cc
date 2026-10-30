@@ -15,6 +15,9 @@ JSRuntime* QjsHelper::currentRuntimeChecked() { return EngineScope::currentEngin
 
 JSContext* QjsHelper::currentContextChecked() { return EngineScope::currentEngineChecked().context_; }
 
+bool QjsHelper::isException(JSValueConst val) { return JS_IsException(val); }
+bool QjsHelper::isException(int code) { return code < 0; }
+
 void QjsHelper::rethrowException(JSValueConst val) {
     if (JS_IsException(val)) {
         rethrowException(-1);
@@ -22,7 +25,7 @@ void QjsHelper::rethrowException(JSValueConst val) {
 }
 
 void QjsHelper::rethrowException(int code, std::string_view message) {
-    if (code < 0) {
+    if (isException(code)) {
         auto& engine = EngineScope::currentEngineChecked();
         auto  error  = JS_GetException(engine.context_);
 

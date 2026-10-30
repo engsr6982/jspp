@@ -37,6 +37,9 @@ template <typename>
 class Local;
 
 template <typename>
+class MaybeLocal;
+
+template <typename>
 class Global;
 
 template <typename>

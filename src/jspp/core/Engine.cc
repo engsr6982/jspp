@@ -3,6 +3,7 @@
 #include "EngineScope.h"
 #include "Exception.h"
 #include "InstancePayload.h"
+#include "MaybeLocal.h"
 #include "MetaInfo.h"
 #include "Reference.h"
 #include "TrackedHandle.h"
@@ -55,29 +56,31 @@ Local<Value> Engine::evalScript(Local<String> const& code) { return evalScript(c
 Local<Value> Engine::evalModule(Local<String> const& code) { return evalModule(code, String::newString("<eval>")); }
 
 
-Local<Value> Engine::loadFile(std::filesystem::path const& path) {
-    if (isDestroying()) return {};
+MaybeLocal<Value> Engine::loadFile(std::filesystem::path const& path) {
+    if (isDestroying()) {
+        return MaybeLocal<Value>::fromError("engine is destroying");
+    }
     if (!std::filesystem::exists(path)) {
-        throw Exception("File not found: " + path.string());
+        return MaybeLocal<Value>::fromError("File not found" + path.string());
     }
     std::ifstream ifs(path);
     if (!ifs.is_open()) {
-        throw Exception("Failed to open file: " + path.string());
+        return MaybeLocal<Value>::fromError("Failed to open file: " + path.string());
     }
     std::string code((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
     return evalModule(String::newString(code), String::newString(path.string()));
 }
 
-Local<Object> Engine::loadModule(std::filesystem::path const& path) {
+MaybeLocal<Object> Engine::loadModule(std::filesystem::path const& path) {
     if (isDestroying()) {
-        throw Exception("engine is destroying");
+        return MaybeLocal<Object>::fromError("engine is destroying");
     }
     if (!std::filesystem::exists(path)) {
-        throw Exception("File not found: " + path.string());
+        return MaybeLocal<Object>::fromError("File not found: " + path.string());
     }
     std::ifstream ifs(path, std::ios::binary);
     if (!ifs.is_open()) {
-        throw Exception("Failed to open file: " + path.string());
+        return MaybeLocal<Object>::fromError("Failed to open file: " + path.string());
     }
     std::string code((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
 

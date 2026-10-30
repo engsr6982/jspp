@@ -13,7 +13,7 @@ thread_local EngineScope* EngineScope::gCurrentScope_ = nullptr;
 EngineScope::EngineScope(Engine& engine) : EngineScope(&engine) {}
 EngineScope::EngineScope(Engine* engine) : EngineScope(InternalEnterFlag{}, engine) {
     if (engine_ == nullptr) {
-        throw std::logic_error("An EngineScope must be created with an Engine");
+        [[unlikely]] throw std::logic_error("An EngineScope must be created with an Engine");
     }
 }
 EngineScope::EngineScope(InternalEnterFlag, Engine* engine, bool needEnter) : engine_(engine), prev_(gCurrentScope_) {
@@ -48,7 +48,7 @@ Engine& EngineScope::currentEngineChecked() {
 
 void EngineScope::ensureEngine(Engine* engine) {
     if (engine == nullptr) {
-        throw std::logic_error("An EngineScope must be created before accessing the engine API");
+        [[unlikely]] throw std::logic_error("An EngineScope must be created before accessing the engine API");
     }
 }
 
@@ -87,7 +87,12 @@ TransientObjectScope::~TransientObjectScope() {
 
 void TransientObjectScope::track(Local<Value> const& wrapper) {
     auto& engine  = EngineScope::currentEngineChecked();
-    auto* payload = engine.getInstancePayload(wrapper.asObject());
+
+    auto maybeObj = wrapper.asObject();
+    if (!maybeObj) [[unlikely]] {
+        throw std::logic_error("TransientObjectScope::track requires a non-null object");
+    }
+    auto* payload = engine.getInstancePayload(maybeObj.toLocal());
     if (!payload) [[unlikely]] {
         throw std::logic_error("TransientObjectScope::track requires a native instance wrapper");
     }

@@ -66,7 +66,7 @@ public:
      *         the namespace is needed.
      * @note This interface is not available in the Addon scenario or under NoModuleLoader.
      */
-    Local<Value> loadFile(std::filesystem::path const& path);
+    MaybeLocal<Value> loadFile(std::filesystem::path const& path);
 
     /**
      * Load an ES module and return its module namespace object
@@ -74,7 +74,7 @@ public:
      * @note Throws if the module does not finish evaluating synchronously (e.g. top-level await).
      * @note This interface is not available in the Addon scenario or under NoModuleLoader.
      */
-    Local<Object> loadModule(std::filesystem::path const& path);
+    MaybeLocal<Object> loadModule(std::filesystem::path const& path);
 
     Local<Value> evalScript(Local<String> const& code, Local<String> const& source);
 

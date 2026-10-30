@@ -1,6 +1,8 @@
 #pragma once
 #include "Reference.h" // NOLINT
 
+#include "MaybeLocal.h" // NOLINT
+
 #include <stdexcept>
 
 namespace jspp {
@@ -9,7 +11,7 @@ namespace jspp {
 // Ensure that the handle returned by this function is visible
 template <typename T>
     requires concepts::WrapType<T>
-Local<T> Local<Value>::as() const {
+MaybeLocal<T> Local<Value>::as() const {
     if constexpr (std::is_same_v<T, Value>) {
         return asValue();
     } else if constexpr (std::is_same_v<T, Null>) {

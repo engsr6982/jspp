@@ -1,13 +1,13 @@
 #include "QjsHelper.h"
 #include "jspp/core/EngineScope.h"
 #include "jspp/core/Exception.h"
+#include "jspp/core/MaybeLocal.h"
 #include "jspp/core/Reference.h"
 #include "jspp/core/Value.h"
 #include "jspp/core/ValueHelper.h"
 
 #include "QjsHelper.h"
 #include "QjsReference.inl"
-#include "quickjs.h"
 
 
 namespace jspp {
@@ -32,54 +32,54 @@ bool Local<Value>::isPromise() const { return !JS_IsUninitialized(val) && JS_IsP
 bool Local<Value>::isProxy() const { return !JS_IsUninitialized(val) && JS_IsProxy(val); }
 
 
-Local<Value> Local<Value>::asValue() const { return *this; }
-Local<Null>  Local<Value>::asNull() const {
+Local<Value>     Local<Value>::asValue() const { return *this; }
+MaybeLocal<Null> Local<Value>::asNull() const {
     if (isNull()) return Local<Null>{qjs_backend::QjsHelper::dupValue(val)};
-    throw Exception("cannot convert to Null");
+    return MaybeLocal<Null>::fromError("cannot convert to Null");
 }
-Local<Undefined> Local<Value>::asUndefined() const {
+MaybeLocal<Undefined> Local<Value>::asUndefined() const {
     if (isUndefined()) return Local<Undefined>{qjs_backend::QjsHelper::dupValue(val)};
-    throw Exception("cannot convert to Undefined");
+    return MaybeLocal<Undefined>::fromError("cannot convert to Undefined");
 }
-Local<Boolean> Local<Value>::asBoolean() const {
+MaybeLocal<Boolean> Local<Value>::asBoolean() const {
     if (isBoolean()) return Local<Boolean>{qjs_backend::QjsHelper::dupValue(val)};
-    throw Exception("cannot convert to Boolean");
+    return MaybeLocal<Boolean>::fromError("cannot convert to Boolean");
 }
-Local<Number> Local<Value>::asNumber() const {
+MaybeLocal<Number> Local<Value>::asNumber() const {
     if (isNumber()) return Local<Number>{qjs_backend::QjsHelper::dupValue(val)};
-    throw Exception("cannot convert to Number");
+    return MaybeLocal<Number>::fromError("cannot convert to Number");
 }
-Local<BigInt> Local<Value>::asBigInt() const {
+MaybeLocal<BigInt> Local<Value>::asBigInt() const {
     if (isBigInt()) return Local<BigInt>{qjs_backend::QjsHelper::dupValue(val)};
-    throw Exception("cannot convert to BigInt");
+    return MaybeLocal<BigInt>::fromError("cannot convert to BigInt");
 }
-Local<String> Local<Value>::asString() const {
+MaybeLocal<String> Local<Value>::asString() const {
     if (isString()) return Local<String>{qjs_backend::QjsHelper::dupValue(val)};
-    throw Exception("cannot convert to String");
+    return MaybeLocal<String>::fromError("cannot convert to String");
 }
-Local<Symbol> Local<Value>::asSymbol() const {
+MaybeLocal<Symbol> Local<Value>::asSymbol() const {
     if (isSymbol()) return Local<Symbol>{qjs_backend::QjsHelper::dupValue(val)};
-    throw Exception("cannot convert to Symbol");
+    return MaybeLocal<Symbol>::fromError("cannot convert to Symbol");
 }
-Local<Object> Local<Value>::asObject() const {
+MaybeLocal<Object> Local<Value>::asObject() const {
     if (isObject()) return Local<Object>{qjs_backend::QjsHelper::dupValue(val)};
-    throw Exception("cannot convert to Object");
+    return MaybeLocal<Object>::fromError("cannot convert to Object");
 }
-Local<Array> Local<Value>::asArray() const {
+MaybeLocal<Array> Local<Value>::asArray() const {
     if (isArray()) return Local<Array>{qjs_backend::QjsHelper::dupValue(val)};
-    throw Exception("cannot convert to Array");
+    return MaybeLocal<Array>::fromError("cannot convert to Array");
 }
-Local<Function> Local<Value>::asFunction() const {
+MaybeLocal<Function> Local<Value>::asFunction() const {
     if (isFunction()) return Local<Function>{qjs_backend::QjsHelper::dupValue(val)};
-    throw Exception("cannot convert to Function");
+    return MaybeLocal<Function>::fromError("cannot convert to Function");
 }
-Local<Promise> Local<Value>::asPromise() const {
+MaybeLocal<Promise> Local<Value>::asPromise() const {
     if (isPromise()) return Local<Promise>{qjs_backend::QjsHelper::dupValue(val)};
-    throw Exception("cannot convert to Promise");
+    return MaybeLocal<Promise>::fromError("cannot convert to Promise");
 }
-Local<Proxy> Local<Value>::asProxy() const {
+MaybeLocal<Proxy> Local<Value>::asProxy() const {
     if (isProxy()) return Local<Proxy>{qjs_backend::QjsHelper::dupValue(val)};
-    throw Exception("cannot convert to Proxy");
+    return MaybeLocal<Proxy>::fromError("cannot convert to Proxy");
 }
 
 void Local<Value>::clear() {
@@ -179,7 +179,7 @@ int64_t Local<BigInt>::getInt64() const {
     qjs_backend::QjsHelper::rethrowException(JS_ToBigInt64(ctx, &result, val));
 
     // quickjs 的转换会按位回绕, 用一次往返比较判断是否无损
-    auto back = JS_NewBigInt64(ctx, result);
+    auto back     = JS_NewBigInt64(ctx, result);
     bool lossless = JS_IsStrictEqual(ctx, val, back);
     JS_FreeValue(ctx, back);
     if (!lossless) {
@@ -192,7 +192,7 @@ uint64_t Local<BigInt>::getUint64() const {
     uint64_t result = 0;
     qjs_backend::QjsHelper::rethrowException(JS_ToBigUint64(ctx, &result, val));
 
-    auto back = JS_NewBigUint64(ctx, result);
+    auto back     = JS_NewBigUint64(ctx, result);
     bool lossless = JS_IsStrictEqual(ctx, val, back);
     JS_FreeValue(ctx, back);
     if (!lossless) {

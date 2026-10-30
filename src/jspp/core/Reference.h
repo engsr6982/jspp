@@ -35,7 +35,9 @@ private:                                                                        
     template <typename>                                                                                                \
     friend class Global;                                                                                               \
     template <typename>                                                                                                \
-    friend class Weak;
+    friend class Weak;                                                                                                 \
+    template <typename>                                                                                                \
+    friend class MaybeLocal;
 
 #define SPECALIZATION_AS_VALUE(VALUE)                                                                                  \
 public:                                                                                                                \
@@ -81,26 +83,26 @@ public:
     [[nodiscard]] bool isPromise() const;
     [[nodiscard]] bool isProxy() const;
 
-    [[nodiscard]] Local<Value>     asValue() const;
-    [[nodiscard]] Local<Null>      asNull() const;
-    [[nodiscard]] Local<Undefined> asUndefined() const;
-    [[nodiscard]] Local<Boolean>   asBoolean() const;
-    [[nodiscard]] Local<Number>    asNumber() const;
-    [[nodiscard]] Local<BigInt>    asBigInt() const;
-    [[nodiscard]] Local<String>    asString() const;
-    [[nodiscard]] Local<Symbol>    asSymbol() const;
-    [[nodiscard]] Local<Object>    asObject() const;
-    [[nodiscard]] Local<Array>     asArray() const;
-    [[nodiscard]] Local<Function>  asFunction() const;
-    [[nodiscard]] Local<Promise>   asPromise() const;
-    [[nodiscard]] Local<Proxy>     asProxy() const;
+    [[nodiscard]] Local<Value>          asValue() const;
+    [[nodiscard]] MaybeLocal<Null>      asNull() const;
+    [[nodiscard]] MaybeLocal<Undefined> asUndefined() const;
+    [[nodiscard]] MaybeLocal<Boolean>   asBoolean() const;
+    [[nodiscard]] MaybeLocal<Number>    asNumber() const;
+    [[nodiscard]] MaybeLocal<BigInt>    asBigInt() const;
+    [[nodiscard]] MaybeLocal<String>    asString() const;
+    [[nodiscard]] MaybeLocal<Symbol>    asSymbol() const;
+    [[nodiscard]] MaybeLocal<Object>    asObject() const;
+    [[nodiscard]] MaybeLocal<Array>     asArray() const;
+    [[nodiscard]] MaybeLocal<Function>  asFunction() const;
+    [[nodiscard]] MaybeLocal<Promise>   asPromise() const;
+    [[nodiscard]] MaybeLocal<Proxy>     asProxy() const;
 
     /**
      * @tparam T must be the type of as described above
      */
     template <typename T>
         requires concepts::WrapType<T>
-    [[nodiscard]] Local<T> as() const;
+    [[nodiscard]] MaybeLocal<T> as() const;
 
     void clear();
 };
@@ -271,15 +273,15 @@ public:
      * @brief Get the fulfillment value or rejection reason.
      * @note  Throws if the promise is still pending.
      */
-    [[nodiscard]] Local<Value> result() const;
+    [[nodiscard]] MaybeLocal<Value> result() const;
 
     /** JavaScript: Promise.prototype.then (native engine API per backend) */
-    [[nodiscard]] Local<Promise> then(Local<Function> const& onFulfilled, Local<Function> const& onRejected) const;
+    [[nodiscard]] MaybeLocal<Promise> then(Local<Function> const& onFulfilled, Local<Function> const& onRejected) const;
 
-    [[nodiscard]] Local<Promise> then(Local<Function> const& onFulfilled) const;
+    [[nodiscard]] MaybeLocal<Promise> then(Local<Function> const& onFulfilled) const;
 
     /** JavaScript: Promise.prototype.catch */
-    [[nodiscard]] Local<Promise> catchError(Local<Function> const& onRejected) const;
+    [[nodiscard]] MaybeLocal<Promise> catchError(Local<Function> const& onRejected) const;
 };
 
 template <>

@@ -71,39 +71,39 @@ public:
 class String : public Value {
 public:
     String() = delete;
-    [[nodiscard]] static Local<String> newString(const char* str);
-    [[nodiscard]] static Local<String> newString(std::string const& str);
-    [[nodiscard]] static Local<String> newString(std::string_view sv);
+    [[nodiscard]] static MaybeLocal<String> newString(const char* str);
+    [[nodiscard]] static MaybeLocal<String> newString(std::string const& str);
+    [[nodiscard]] static MaybeLocal<String> newString(std::string_view sv);
 };
 
 class Symbol : public Value {
 public:
     Symbol() = delete;
-    [[nodiscard]] static Local<Symbol> newSymbol();
-    [[nodiscard]] static Local<Symbol> newSymbol(std::string_view description);
-    [[nodiscard]] static Local<Symbol> newSymbol(const char* description);
-    [[nodiscard]] static Local<Symbol> newSymbol(std::string const& description);
+    [[nodiscard]] static MaybeLocal<Symbol> newSymbol();
+    [[nodiscard]] static MaybeLocal<Symbol> newSymbol(std::string_view description);
+    [[nodiscard]] static MaybeLocal<Symbol> newSymbol(const char* description);
+    [[nodiscard]] static MaybeLocal<Symbol> newSymbol(std::string const& description);
 
-    [[nodiscard]] static Local<Symbol> forKey(Local<String> const& str); // JavaScript: Symbol.for
+    [[nodiscard]] static MaybeLocal<Symbol> forKey(Local<String> const& str); // JavaScript: Symbol.for
 };
 
 class Function : public Value {
 public:
     Function() = delete;
 
-    [[nodiscard]] static Local<Function> newFunction(FunctionCallback&& callback);
+    [[nodiscard]] static MaybeLocal<Function> newFunction(FunctionCallback&& callback);
 };
 
 class Object : public Value {
 public:
     Object() = delete;
-    [[nodiscard]] static Local<Object> newObject();
+    [[nodiscard]] static MaybeLocal<Object> newObject();
 };
 
 class Array : public Value {
 public:
     Array() = delete;
-    [[nodiscard]] static Local<Array> newArray(size_t length = 0);
+    [[nodiscard]] static MaybeLocal<Array> newArray(size_t length = 0);
 };
 
 class Promise : public Value {
@@ -140,7 +140,7 @@ public:
     /**
      * @brief ECMAScript ProxyCreate: proxying target with handler.
      */
-    [[nodiscard]] static Local<Proxy> newProxy(Local<Object> const& target, Local<Object> const& handler);
+    [[nodiscard]] static MaybeLocal<Proxy> newProxy(Local<Object> const& target, Local<Object> const& handler);
 };
 
 class Engine; // forward declaration

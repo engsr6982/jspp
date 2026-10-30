@@ -19,6 +19,11 @@ struct ValueHelper {
     [[nodiscard]] inline static Local<T> wrap(typename internal::ImplType<Local<T>>::type value) {
         return Local<T>{value};
     }
+
+    template <concepts::WrapType T>
+    [[nodiscard]] inline static MaybeLocal<T> wrapMaybeLocal(typename internal::ImplType<Local<T>>::type value) {
+        return MaybeLocal<T>{value};
+    }
 };
 
 

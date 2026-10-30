@@ -1,5 +1,7 @@
 #pragma once
 #include "jspp/Macro.h"
+#include "jspp/core/Engine.h"
+#include "jspp/core/EngineScope.h"
 #include "jspp/core/Fwd.h"
 #include "jspp/core/ValueHelper.h"
 
@@ -18,9 +20,34 @@ struct QjsHelper {
 
     [[nodiscard]] static JSContext* currentContextChecked();
 
-    static void rethrowException(JSValueConst val);
+    static bool isException(JSValueConst val);
+    static bool isException(int code);
 
+    static void rethrowException(JSValueConst val);
     static void rethrowException(int code, std::string_view message = "Unknown error");
+
+    template <typename T>
+    [[nodiscard]] static inline MaybeLocal<T> asMaybeLocal(int code, std::string_view message = "Unknown error") {
+        if (isException(code)) {
+            auto& engine = EngineScope::currentEngineChecked();
+            auto  error  = JS_GetException(engine.context_);
+
+            if (JS_IsObject(error)) {
+                return ValueHelper::wrapMaybeLocal<T>(error);
+            } else {
+                JS_FreeValue(engine.context_, error);
+                return MaybeLocal<T>::fromError(std::string{message});
+            }
+        }
+        return {};
+    }
+    template <typename T>
+    [[nodiscard]] static inline MaybeLocal<T> asMaybeLocal(JSValueConst val) {
+        if (JS_IsException(val)) {
+            return asMaybeLocal<T>(-1);
+        }
+        return ValueHelper::wrapMaybeLocal<T>(dupValue(val));
+    }
 
     [[nodiscard]] static JSValue rethrowToScript(Exception const& exception, Engine* engine = nullptr);
     [[nodiscard]] static JSValue rethrowToScript(std::exception const& exception, Engine* engine = nullptr);
