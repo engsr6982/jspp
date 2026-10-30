@@ -65,16 +65,16 @@ endif()
 
 
 if(WIN32)
-    target_compile_options(jspp PUBLIC /utf-8 /W4 /sdl /Zc:__cplusplus /Zc:preprocessor)
+    target_compile_options(jspp PUBLIC /utf-8 /W4 /sdl /Zc:__cplusplus)
+
+    if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        target_compile_options(jspp PUBLIC /Zc:preprocessor)
+    endif()
 elseif(UNIX AND NOT APPLE)
     set_property(TARGET jspp PROPERTY POSITION_INDEPENDENT_CODE ON)
     target_compile_options(jspp PUBLIC -Wall -Wextra)
-
-    if(UNIX AND NOT APPLE)
-        target_link_libraries(jspp PUBLIC dl pthread)
-    endif()
+    target_link_libraries(jspp PUBLIC dl pthread)
 endif()
-
 
 # ==============================================================================
 # Target: test

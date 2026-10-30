@@ -5,24 +5,18 @@
 // scriptc_core.cc so that the jspp test suite can compile containers in
 // process; this executable only handles the command line.
 //
-// The output bundles one quickjs bytecode blob per module plus a module table
+// The output bundles one QuickJS bytecode blob per module plus a module table
 // and an import table (see jspp-backend/BytecodeContainer.h). Bytecode embeds
 // a checksum and a format version, so a container is only readable by the
-// quickjs build that produced it: scriptc links the same quickjs library as
+// QuickJS build that produced it: scriptc links the same QuickJS library as
 // the jspp runtime.
-//
-// usage: scriptc [--version] [-m] [-n name] [-M name]... -o out.jsc in.js
-// relative imports must stay inside the entry file's directory tree; imports
-// leaving that root, and bare or rooted specifiers, must be declared as
-// native modules via -M (resolved by the host at runtime). -n overrides the
-// entry module's baked name (default: the entry file's name); the override
-// also becomes the base for the entry's relative imports.
 
 #include "scriptc_core.h"
 
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -30,97 +24,165 @@
 
 namespace {
 
-void printUsage() {
-    std::fprintf(stderr, "usage: scriptc [--version] [-m] [-n name] [-M name]... -o out.jsc in.js\n");
+void printUsage(std::FILE* stream) {
+    std::fprintf(
+        stream,
+        "Usage: scriptc [OPTIONS] -o FILE <input.js>\n"
+        "       scriptc --help\n"
+        "       scriptc --version\n"
+    );
 }
 
-// Write the container bytes straight into the output file. Compilation has
-// already finished and succeeded at this point; a disk failure during this
-// write may leave a truncated output, which is the accepted semantics of a
-// direct overwrite. A compilation failure never reaches this function, so a
-// previous good output survives it.
+void printHelp() {
+    printUsage(stdout);
+    std::printf(
+        "\n"
+        "Compile an ES module graph into a QuickJS bytecode container.\n"
+        "\n"
+        "Options:\n"
+        "  -o FILE   Output container file (required).\n"
+        "  -m        Force module compilation of the entry file.\n"
+        "  -n NAME   Override the entry module's logical name.\n"
+        "  -M NAME   Declare a native module; may be specified multiple times.\n"
+        "  --help    Show this help and exit.\n"
+        "  --version Show the QuickJS version used to build scriptc.\n"
+        "\n"
+        "Notes:\n"
+        "  The entry file's directory is the compilation root. Relative imports\n"
+        "  must resolve inside that directory tree. Imports that leave the tree,\n"
+        "  bare specifiers, and rooted specifiers must be declared with -M and\n"
+        "  are resolved by the host at runtime.\n"
+        "\n"
+        "  By default, the entry module's name is its root-relative file name.\n"
+        "  -n overrides that name and also becomes the base for resolving the\n"
+        "  entry module's relative imports. The override must be a canonical,\n"
+        "  non-empty root-relative module name.\n"
+        "\n"
+        "  The container bundles the entry module and its import closure.\n"
+        "  Circular imports are rejected. The runtime must use a compatible\n"
+        "  QuickJS build.\n"
+        "\n"
+    );
+}
+
 bool writeOutput(std::string const& outFilename, std::vector<std::uint8_t> const& bytes) {
     std::FILE* file = std::fopen(outFilename.c_str(), "wb");
     if (!file) {
         std::perror(outFilename.c_str());
         return false;
     }
+
     bool ok = std::fwrite(bytes.data(), 1, bytes.size(), file) == bytes.size();
     if (std::fclose(file) != 0) {
         ok = false;
     }
+
     if (!ok) {
-        std::fprintf(stderr, "Could not write '%s'\n", outFilename.c_str());
+        std::fprintf(stderr, "scriptc: could not write '%s'\n", outFilename.c_str());
     }
     return ok;
+}
+
+bool requireArgument(int& optind, int argc, char** argv, char const* option, char const*& value) {
+    if (optind + 1 >= argc) {
+        std::fprintf(stderr, "scriptc: missing argument for %s\n", option);
+        return false;
+    }
+
+    value = argv[++optind];
+    return true;
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
-    int         optind = 1;
     const char* outFilename = nullptr;
     const char* inFilename  = nullptr;
     const char* entryName   = nullptr;
-    bool        forceModule = false;
+
+    bool                     forceModule = false;
     std::vector<std::string> nativeModules;
 
-    while (optind < argc) {
+    if (argc == 1) {
+        printHelp();
+        return 0;
+    }
+
+    for (int optind = 1; optind < argc; ++optind) {
         const char* arg = argv[optind];
-        if (std::strcmp(arg, "--version") == 0) {
-            std::printf("scriptc (quickjs %d.%d.%d)\n", QJS_VERSION_MAJOR, QJS_VERSION_MINOR, QJS_VERSION_PATCH);
+
+        if (std::strcmp(arg, "--help") == 0) {
+            printHelp();
             return 0;
-        } else if (std::strcmp(arg, "-o") == 0) {
-            if (++optind >= argc) {
-                std::fprintf(stderr, "scriptc: missing argument for -o\n");
+        }
+
+        if (std::strcmp(arg, "--version") == 0) {
+            std::printf("scriptc (QuickJS %d.%d.%d)\n", QJS_VERSION_MAJOR, QJS_VERSION_MINOR, QJS_VERSION_PATCH);
+            return 0;
+        }
+
+        if (std::strcmp(arg, "-o") == 0) {
+            const char* value = nullptr;
+            if (!requireArgument(optind, argc, argv, "-o", value)) {
+                printUsage(stderr);
                 return 1;
             }
-            outFilename = argv[optind++];
+            outFilename = value;
         } else if (std::strcmp(arg, "-M") == 0) {
-            if (++optind >= argc) {
-                std::fprintf(stderr, "scriptc: missing argument for -M\n");
+            const char* value = nullptr;
+            if (!requireArgument(optind, argc, argv, "-M", value)) {
+                printUsage(stderr);
                 return 1;
             }
-            nativeModules.emplace_back(argv[optind++]);
+            nativeModules.emplace_back(value);
         } else if (std::strcmp(arg, "-n") == 0) {
-            if (++optind >= argc) {
-                std::fprintf(stderr, "scriptc: missing argument for -n\n");
+            const char* value = nullptr;
+            if (!requireArgument(optind, argc, argv, "-n", value)) {
+                printUsage(stderr);
                 return 1;
             }
-            entryName = argv[optind++];
+            entryName = value;
         } else if (std::strcmp(arg, "-m") == 0) {
-            // force module mode; JS_DetectModule may misclassify files whose
-            // first import is relative (same as qjsc)
+            // Force module mode; JS_DetectModule may misclassify files whose
+            // first import is relative.
             forceModule = true;
-            optind++;
+        } else if (arg[0] == '-') {
+            std::fprintf(stderr, "scriptc: unknown option '%s'\n", arg);
+            printUsage(stderr);
+            return 1;
         } else {
             if (inFilename) {
                 std::fprintf(stderr, "scriptc: expected a single input file\n");
+                printUsage(stderr);
                 return 1;
             }
-            inFilename = argv[optind++];
+            inFilename = arg;
         }
     }
+
     if (!outFilename || !inFilename) {
-        printUsage();
+        if (!outFilename) {
+            std::fprintf(stderr, "scriptc: missing required option -o FILE\n");
+        }
+        if (!inFilename) {
+            std::fprintf(stderr, "scriptc: missing input file\n");
+        }
+        printUsage(stderr);
         return 1;
     }
+
     if (entryName && *entryName == '\0') {
-        // an explicit empty override is a build misconfiguration, not a
-        // request for the default name
         std::fprintf(stderr, "scriptc: -n requires a non-empty module name\n");
         return 1;
     }
 
     try {
-        // module names are relative to the entry file's directory: the
-        // compilation root is where the entry file lives
+        // The entry file's directory is the compilation root.
         auto entryPath = std::filesystem::weakly_canonical(inFilename);
         auto rootDir   = entryPath.parent_path();
         auto fileName  = entryPath.filename().string();
 
-        // -n overrides only the baked module name; the source is still read
-        // from the input file's own path
+        // -n overrides the baked module name, not the physical source path.
         auto bytes = jspp::scriptc::compileModuleContainer(
             rootDir,
             fileName,
@@ -129,13 +191,15 @@ int main(int argc, char** argv) {
             entryName ? std::optional<std::string>{entryName} : std::nullopt
         );
 
+        // Compilation finishes before opening the output file. A compilation
+        // failure therefore leaves an existing output file untouched.
+        // A disk error during direct overwrite may still truncate the output.
         if (!writeOutput(outFilename, bytes)) {
             return 1;
         }
+
         return 0;
     } catch (std::exception const& e) {
-        // compilation failed before anything was written: the previous output
-        // file, if any, must survive untouched
         std::fprintf(stderr, "scriptc: %s\n", e.what());
         return 1;
     }
