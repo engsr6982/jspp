@@ -1,5 +1,6 @@
 #pragma once
 #include "Exception.h"
+#include "MetaInfo.h"
 #include "Reference.h"
 #include "Value.h"
 
@@ -204,3 +205,19 @@ static_assert(getNamespaceRoot("a..b.c.foo") == std::nullopt);
 static_assert(getNamespaceRoot(".a..b.c.foo") == std::nullopt);
 
 } // namespace jspp::namespace_utils
+
+namespace jspp {
+
+inline Local<Value> resolveEnumValue(EnumMeta const& meta, EnumMeta::Entry const& el) {
+    if (meta.isBool_) {
+        return Boolean::newBoolean(static_cast<bool>(el.bits_));
+    } else if (meta.isBigInt_) {
+        return meta.isUnsigned_ ? BigInt::newBigIntUnsigned(static_cast<uint64_t>(el.bits_))
+                                : BigInt::newBigInt(static_cast<int64_t>(el.bits_));
+    } else {
+        return meta.isUnsigned_ ? Number::newNumber(static_cast<uint32_t>(el.bits_))
+                                : Number::newNumber(static_cast<int32_t>(el.bits_));
+    }
+}
+
+} // namespace jspp

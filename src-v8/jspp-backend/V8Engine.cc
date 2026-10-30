@@ -874,8 +874,8 @@ Local<Object> Engine::performRegisterEnum(EnumMeta const& meta) {
     }
 
     auto object = Object::newObject();
-    for (auto const& [name, value] : meta.entries_) {
-        object.set(String::newString(name), Number::newNumber(static_cast<double>(value)));
+    for (auto const& element : meta.entries_) {
+        object.set(String::newString(element.name_), resolveEnumValue(meta, element));
     }
 
     (void)object.defineOwnProperty(

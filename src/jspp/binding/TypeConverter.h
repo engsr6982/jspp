@@ -15,6 +15,7 @@
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <cstdint>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -363,10 +364,35 @@ struct TypeConverter<T> {
 template <typename T>
     requires std::is_enum_v<T>
 struct TypeConverter<T> {
-    static Local<Number> toJs(T value, ReturnValuePolicy /* policy */, Local<Value> const& /* parent */) {
-        return Number::newNumber(static_cast<int>(value));
+    using trait       = traits::EnumTraits<T>;
+    using script_type = typename trait::script_type;
+
+    static Local<script_type> toJs(T value, ReturnValuePolicy /* policy */, Local<Value> const& /* parent */) {
+        if constexpr (trait::is_bool) {
+            return Boolean::newBoolean(static_cast<bool>(static_cast<trait::underlying_t>(value)));
+        } else if constexpr (trait::is_big) {
+            if constexpr (trait::is_unsigned) {
+                return BigInt::newBigIntUnsigned(static_cast<uint64_t>(static_cast<trait::underlying_t>(value)));
+            } else {
+                return BigInt::newBigInt(static_cast<int64_t>(static_cast<trait::underlying_t>(value)));
+            }
+        } else {
+            return Number::newNumber(static_cast<trait::underlying_t>(value));
+        }
     }
-    static T toCpp(Local<Value> const& value) { return static_cast<T>(value.asNumber().getInt32()); }
+    static T toCpp(Local<Value> const& value) {
+        if constexpr (trait::is_bool) {
+            if (value.isBoolean()) {
+                return static_cast<T>(value.asBoolean().getValue());
+            } else if (value.isNumber()) {
+                return static_cast<T>(value.asNumber().getInt32() > 0); // > 0 == true, <= 0 == false
+            } else [[unlikely]] {
+                throw Exception("Cannot convert value to bool enum<T>", ExceptionType::TypeError);
+            }
+        } else {
+            return static_cast<T>(TypeConverter<typename trait::underlying_t>::toCpp(value));
+        }
+    }
 };
 
 // std::optional <-> null/undefined
@@ -1248,7 +1274,8 @@ FunctionCallback wrapInstanceProviderOverloadAndExtraPolicy(Provider const& prov
             if constexpr (!traits::is_policy<decltype(arg)>::value) {
                 static_assert(
                     std::is_member_function_pointer_v<std::remove_cvref_t<decltype(arg)>>,
-                    "When an InstanceProvider is configured, every overload passed to .func() must be a member function "
+                    "When an InstanceProvider is configured, every overload passed to .func() must be a member "
+                    "function "
                     "pointer"
                 );
                 overloads[idx++] = wrapInstanceProviderMethod(provider, std::forward<decltype(arg)>(arg), policy);

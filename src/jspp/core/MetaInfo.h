@@ -1,6 +1,7 @@
 #pragma once
 #include "Fwd.h"
 
+#include <cstdint>
 #include <string>
 #include <typeindex>
 #include <utility>
@@ -177,17 +178,23 @@ struct EnumMeta {
 public:
     struct Entry {
         std::string const name_;
-        int64_t const     value_;
+        uint64_t const    bits_;
 
-        explicit Entry(std::string name, int64_t value) : name_(std::move(name)), value_(value) {}
+        explicit Entry(std::string name, uint64_t v) : name_(std::move(name)), bits_(static_cast<uint64_t>(v)) {}
     };
 
     std::string const        name_;
     std::vector<Entry> const entries_;
+    bool const               isBigInt_; // Number vs BigInt
+    bool const               isUnsigned_;
+    bool const               isBool_; // enum T : bool;
 
-    explicit EnumMeta(std::string name, std::vector<Entry> entries)
+    explicit EnumMeta(std::string name, std::vector<Entry> entries, bool isBigInt, bool isUnsigned, bool isBool)
     : name_(std::move(name)),
-      entries_(std::move(entries)) {}
+      entries_(std::move(entries)),
+      isBigInt_(isBigInt),
+      isUnsigned_(isUnsigned),
+      isBool_(isBool) {}
 };
 
 

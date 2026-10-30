@@ -101,10 +101,13 @@ TEST_CASE_METHOD(CoreTestFixture, "registerEnum") {
     static auto meta = jspp::EnumMeta{
         "Color",
         {
-          jspp::EnumMeta::Entry{"Red", static_cast<int64_t>(Color::Red)},
-          jspp::EnumMeta::Entry{"Green", static_cast<int64_t>(Color::Green)},
-          jspp::EnumMeta::Entry{"Blue", static_cast<int64_t>(Color::Blue)},
-          }
+          jspp::EnumMeta::Entry{"Red", static_cast<uint64_t>(Color::Red)},
+          jspp::EnumMeta::Entry{"Green", static_cast<uint64_t>(Color::Green)},
+          jspp::EnumMeta::Entry{"Blue", static_cast<uint64_t>(Color::Blue)},
+          },
+        false,
+        false,
+        false
     };
 
     engine->registerEnum(meta);

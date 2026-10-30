@@ -40,7 +40,15 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
 # ==============================================================================
 add_library(jspp STATIC)
 
-file(GLOB_RECURSE CORE_SRC "src/*.cc")
+set(CORE_SRC
+    "${CMAKE_CURRENT_LIST_DIR}/src/jspp/core/Engine.cc"
+    "${CMAKE_CURRENT_LIST_DIR}/src/jspp/core/EngineScope.cc"
+    "${CMAKE_CURRENT_LIST_DIR}/src/jspp/core/PromiseResolver.cc"
+    "${CMAKE_CURRENT_LIST_DIR}/src/jspp/core/Reference.cc"
+    "${CMAKE_CURRENT_LIST_DIR}/src/jspp/core/TrackedHandle.cc"
+    "${CMAKE_CURRENT_LIST_DIR}/src/jspp/core/Trampoline.cc"
+)
+
 target_sources(jspp PRIVATE ${CORE_SRC})
 target_include_directories(jspp PUBLIC
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>"

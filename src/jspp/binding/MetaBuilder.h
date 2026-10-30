@@ -9,6 +9,7 @@
 #include "jspp/core/MetaInfo.h"
 #include "jspp/core/Trampoline.h"
 #include "jspp/core/Utils.h"
+#include "traits/TypeTraits.h"
 
 #include <concepts>
 #include <cstddef>
@@ -543,11 +544,14 @@ public:
     }
 
     EnumMetaBuilder& value(std::string name, T e) {
-        entries_.emplace_back(std::move(name), static_cast<int64_t>(e));
+        entries_.emplace_back(std::move(name), static_cast<uint64_t>(e));
         return *this;
     }
 
-    [[nodiscard]] EnumMeta build() { return EnumMeta{std::move(name_), std::move(entries_)}; }
+    [[nodiscard]] EnumMeta build() {
+        using trait = traits::EnumTraits<T>;
+        return EnumMeta{std::move(name_), std::move(entries_), trait::is_big, trait::is_unsigned, trait::is_bool};
+    }
 };
 
 

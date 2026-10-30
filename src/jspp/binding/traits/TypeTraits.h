@@ -130,4 +130,15 @@ inline constexpr bool is_weak_ptr_v = is_weak_ptr<std::remove_cvref_t<T>>::value
 template <typename T>
 inline constexpr bool is_std_smart_pointer = is_unique_ptr_v<T> || is_shared_ptr_v<T> || is_weak_ptr_v<T>;
 
+
+template <typename T>
+    requires std::is_enum_v<T>
+struct EnumTraits {
+    using underlying_t                = std::underlying_type_t<T>;
+    static constexpr bool is_bool     = std::is_same_v<underlying_t, bool>;
+    static constexpr bool is_big      = sizeof(underlying_t) > 4;
+    static constexpr bool is_unsigned = std::is_unsigned_v<underlying_t>;
+    using script_type = std::conditional_t<is_bool, Boolean, std::conditional_t<is_big, BigInt, Number>>;
+};
+
 } // namespace jspp::binding::traits
