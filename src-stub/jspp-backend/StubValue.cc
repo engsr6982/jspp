@@ -176,7 +176,7 @@ Local<Promise> Local<Promise>::catchError(Local<Function> const& onRejected) con
 
 Arguments::Arguments(BackendImpl impl) : impl_(std::move(impl)) {}
 
-Engine* Arguments::runtime() const {
+Engine* Arguments::engine() const {
     // TODO: please implement this
     throw Exception{"Not implemented"};
 }

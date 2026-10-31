@@ -293,7 +293,7 @@ Local<Promise> Local<Promise>::catchError(Local<Function> const& onRejected) con
 
 Arguments::Arguments(BackendImpl impl) : impl_(std::move(impl)) {}
 
-Engine* Arguments::runtime() const { return impl_.first; }
+Engine* Arguments::engine() const { return impl_.first; }
 
 bool Arguments::hasThiz() const { return impl_.second.This()->IsObject(); }
 

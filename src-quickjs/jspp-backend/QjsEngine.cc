@@ -1459,7 +1459,7 @@ Local<Function> QjsEngine::newConstructor(ClassMeta const& meta) {
         [](Arguments const& args, void* data1, void* /* data2 */) -> Local<Value> {
             auto meta = static_cast<ClassMeta*>(data1);
 
-            auto engine = args.runtime();
+            auto engine = args.engine();
 
             auto scriptThis = QjsHelper::peekValue(args.thiz());
             if (!JS_IsConstructor(engine->context_, scriptThis)) [[unlikely]] {
@@ -1602,7 +1602,7 @@ Local<Object> QjsEngine::newClassPrototype(ClassMeta const& meta) {
                 if (!args.hasThiz()) [[unlikely]] {
                     throw Exception{"Method called on incompatible receiver", ExceptionType::TypeError};
                 }
-                auto payload = args.runtime()->getInstancePayload(args.thiz());
+                auto payload = args.engine()->getInstancePayload(args.thiz());
                 if (!payload) [[unlikely]] {
                     throw Exception{"Method called on incompatible receiver", ExceptionType::TypeError};
                 }
@@ -1637,7 +1637,7 @@ Local<Object> QjsEngine::newClassPrototype(ClassMeta const& meta) {
                 if (!args.hasThiz()) [[unlikely]] {
                     throw Exception{"Getter called on incompatible receiver", ExceptionType::TypeError};
                 }
-                auto payload = args.runtime()->getInstancePayload(args.thiz());
+                auto payload = args.engine()->getInstancePayload(args.thiz());
                 if (!payload) [[unlikely]] {
                     throw Exception{"Getter called on incompatible receiver", ExceptionType::TypeError};
                 }
@@ -1662,7 +1662,7 @@ Local<Object> QjsEngine::newClassPrototype(ClassMeta const& meta) {
                     if (!args.hasThiz()) [[unlikely]] {
                         throw Exception{"Setter called on incompatible receiver", ExceptionType::TypeError};
                     }
-                    auto payload = args.runtime()->getInstancePayload(args.thiz());
+                    auto payload = args.engine()->getInstancePayload(args.thiz());
                     if (!payload) [[unlikely]] {
                         throw Exception{"Setter called on incompatible receiver", ExceptionType::TypeError};
                     }

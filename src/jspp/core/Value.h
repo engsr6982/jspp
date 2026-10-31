@@ -156,7 +156,7 @@ public:
 
     JSPP_DISABLE_COPY_MOVE(Arguments);
 
-    [[nodiscard]] Engine* runtime() const;
+    [[nodiscard]] Engine* engine() const;
 
     [[nodiscard]] bool hasThiz() const;
 

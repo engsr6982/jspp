@@ -364,7 +364,7 @@ Local<Promise> Local<Promise>::catchError(Local<Function> const& onRejected) con
 
 Arguments::Arguments(BackendImpl impl) : impl_(std::move(impl)) {}
 
-Engine* Arguments::runtime() const { return impl_.engine_; }
+Engine* Arguments::engine() const { return impl_.engine_; }
 
 bool Arguments::hasThiz() const { return JS_IsObject(impl_.thiz_); }
 
