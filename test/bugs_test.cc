@@ -6,6 +6,7 @@
 #include "jspp/core/EngineScope.h"
 #include "jspp/core/Exception.h"
 #include "jspp/core/MetaInfo.h"
+#include "jspp/core/PromiseResolver.h"
 #include "jspp/core/Reference.h"
 #include "jspp/core/Trampoline.h"
 #include "jspp/core/Value.h"
@@ -123,12 +124,13 @@ public:
         cb(ev);
     }
 };
-static auto EventWithChildMeta = binding::defClass<EventWithChild>("EventWithChild")
-                                     .ctor(nullptr)
-                                     // kReference 策略：回调内访问子属性会进入瞬态作用域托管
-                                     .prop("child", &EventWithChild::getChild, nullptr, binding::ReturnValuePolicy::kReference)
-                                     .func("listen", &EventWithChild::listen)
-                                     .build();
+static auto EventWithChildMeta =
+    binding::defClass<EventWithChild>("EventWithChild")
+        .ctor(nullptr)
+        // kReference 策略：回调内访问子属性会进入瞬态作用域托管
+        .prop("child", &EventWithChild::getChild, nullptr, binding::ReturnValuePolicy::kReference)
+        .func("listen", &EventWithChild::listen)
+        .build();
 
 // 场景 A：回调不持有事件参数。事件参数 wrapper 由 argv 持有引用计数，
 // 作用域退出时 argv 先于 TransientObjectScope 析构 -> wrapper 被释放 (QuickJS 引用计数归零立即回收)
@@ -140,11 +142,9 @@ TEST_CASE_METHOD(BugTestFixture, "Bug: transient scope UAF when callback does no
     engine->registerClass(ChildMeta);
 
     // 回调体内完全不持有 e，也不访问任何子属性
-    REQUIRE_NOTHROW(
-        engine->evalScript(String::newString(R"(
+    REQUIRE_NOTHROW(engine->evalScript(String::newString(R"(
             EventWithChild.listen(() => { /* not retaining e */ });
-        )"))
-    );
+        )")));
 }
 
 // 场景 B：回调内访问子属性 (kReference) 并立即丢弃。
@@ -155,14 +155,12 @@ TEST_CASE_METHOD(BugTestFixture, "Bug: transient scope UAF when sub property dro
     engine->registerClass(ChildMeta);
 
     // x 创建后立即被丢弃，未逃逸；作用域退出时 invalidate 命中的是已释放内存
-    REQUIRE_NOTHROW(
-        engine->evalScript(String::newString(R"(
+    REQUIRE_NOTHROW(engine->evalScript(String::newString(R"(
             EventWithChild.listen((e) => {
                 let x = e.child; // kReference wrapper, 被瞬态作用域跟踪
                 x = null;        // 立即丢弃 -> 引用计数归零 -> NativeInstance 被销毁
             });
-        )"))
-    );
+        )")));
 }
 
 // 场景 C：长期对象的成员在回调内被访问，不应被瞬态作用域误伤（溯源式跟踪）
@@ -178,7 +176,11 @@ static auto HolderMeta = binding::defClass<Holder>("Holder")
                              .prop("child", &Holder::getChild, nullptr, binding::ReturnValuePolicy::kReference)
                              .build();
 
-TEST_CASE_METHOD(BugTestFixture, "Bug: transient scope must not poison long-lived member accessed in callback", "[bugs]") {
+TEST_CASE_METHOD(
+    BugTestFixture,
+    "Bug: transient scope must not poison long-lived member accessed in callback",
+    "[bugs]"
+) {
     EngineScope lock{*engine};
     engine->registerClass(EventWithChildMeta);
     engine->registerClass(ChildMeta);
@@ -186,14 +188,12 @@ TEST_CASE_METHOD(BugTestFixture, "Bug: transient scope must not poison long-live
 
     // h 在瞬态作用域外创建（未被跟踪）；回调内访问 h.child（kReference，
     // parent=h 不在跟踪集合中）按溯源规则不进入托管，回调结束后引用必须仍然有效
-    REQUIRE_NOTHROW(
-        engine->evalScript(String::newString(R"(
+    REQUIRE_NOTHROW(engine->evalScript(String::newString(R"(
             let h = new Holder(9);
             let captured;
             EventWithChild.listen(() => { captured = h.child; });
             captured.getId() === 9;
-        )"))
-    );
+        )")));
 }
 
 // 阳性对照：事件对象的子属性从瞬态根派生，逃逸后仍必须失效（原有语义保持）
@@ -228,10 +228,7 @@ public:
     PermsPod() = default;
     explicit PermsPod(int w) : water(w) {}
 };
-static auto PermsPodMeta = binding::defClass<PermsPod>("PermsPod")
-                               .ctor<int>()
-                               .prop("water", &PermsPod::water)
-                               .build();
+static auto PermsPodMeta = binding::defClass<PermsPod>("PermsPod").ctor<int>().prop("water", &PermsPod::water).build();
 
 class LandTablePod {
 public:
@@ -292,10 +289,11 @@ public:
     ConstHolderPod() = default;
     LandTablePod const& getPod() const { return pod_; }
 };
-static auto ConstHolderPodMeta = binding::defClass<ConstHolderPod>("ConstHolderPod")
-                                     .ctor<>()
-                                     .prop("pod", &ConstHolderPod::getPod, nullptr, binding::ReturnValuePolicy::kReference)
-                                     .build();
+static auto ConstHolderPodMeta =
+    binding::defClass<ConstHolderPod>("ConstHolderPod")
+        .ctor<>()
+        .prop("pod", &ConstHolderPod::getPod, nullptr, binding::ReturnValuePolicy::kReference)
+        .build();
 
 TEST_CASE_METHOD(BugTestFixture, "Bug: const host must yield read-only member wrapper", "[bugs]") {
     EngineScope lock{*engine};
@@ -344,10 +342,7 @@ public:
     LandPerm() = default;
     explicit LandPerm(int w) : water(w) {}
 };
-static auto LandPermMeta = binding::defClass<LandPerm>("LandPerm")
-                               .ctor<int>()
-                               .prop("water", &LandPerm::water)
-                               .build();
+static auto LandPermMeta = binding::defClass<LandPerm>("LandPerm").ctor<int>().prop("water", &LandPerm::water).build();
 
 class Land {
 public:
@@ -357,25 +352,24 @@ public:
     explicit Land(int w) : table_(w) {}
     LandPerm const& getPermTable() const { return table_; }
 };
-static auto LandMeta = binding::defClass<Land>("Land")
-                           .ctor<int>()
-                           // 成员函数指针 + 显式 kCopy：const& 返回 -> 可变副本（修复：kCopy 剥离 const）
-                           .method("getTableCopy", &Land::getPermTable, binding::ReturnValuePolicy::kCopy)
-                           // lambda 绑定 + kCopy：const& 返回 -> 可变副本（修复：method 支持 lambda）
-                           .method(
-                               "getTableLambda",
-                               [](Land& self) -> LandPerm const& { return self.getPermTable(); },
-                               binding::ReturnValuePolicy::kCopy
-                           )
-                           // lambda 绑定 + 默认策略：按值返回 -> kAutomatic 解析为 kCopy（修复：按值默认拷贝）
-                           .method("getTableValue", [](Land& self) -> LandPerm {
-                               return LandPerm{self.getPermTable().water + 1};
-                           })
-                           // lambda 绑定 + 参数（void 分支）
-                           .method("setWater", [](Land& self, int w) { self.table_.water = w; })
-                           // lambda builder 特判：返回 C& 时返回 thiz
-                           .method("self", [](Land& self) -> Land& { return self; })
-                           .build();
+static auto LandMeta =
+    binding::defClass<Land>("Land")
+        .ctor<int>()
+        // 成员函数指针 + 显式 kCopy：const& 返回 -> 可变副本（修复：kCopy 剥离 const）
+        .method("getTableCopy", &Land::getPermTable, binding::ReturnValuePolicy::kCopy)
+        // lambda 绑定 + kCopy：const& 返回 -> 可变副本（修复：method 支持 lambda）
+        .method(
+            "getTableLambda",
+            [](Land& self) -> LandPerm const& { return self.getPermTable(); },
+            binding::ReturnValuePolicy::kCopy
+        )
+        // lambda 绑定 + 默认策略：按值返回 -> kAutomatic 解析为 kCopy（修复：按值默认拷贝）
+        .method("getTableValue", [](Land& self) -> LandPerm { return LandPerm{self.getPermTable().water + 1}; })
+        // lambda 绑定 + 参数（void 分支）
+        .method("setWater", [](Land& self, int w) { self.table_.water = w; })
+        // lambda builder 特判：返回 C& 时返回 thiz
+        .method("self", [](Land& self) -> Land& { return self; })
+        .build();
 
 TEST_CASE_METHOD(BugTestFixture, "Bug: const-ref + kCopy must produce mutable copy", "[bugs]") {
     EngineScope lock{*engine};
@@ -435,7 +429,6 @@ TEST_CASE_METHOD(BugTestFixture, "Bug: lambda method binding (const-ref kCopy / 
 }
 
 
-
 // ============================================================
 // ReferenceInternal 生命周期安全性（4 种释放场景）
 //
@@ -464,7 +457,7 @@ public:
         ~ActorState() { ++g_stateDeleted; }
     };
 
-    int id{0};
+    int        id{0};
     ActorState state_;
 
     Actor(int id) : id(id) {}
@@ -483,26 +476,26 @@ public:
         return *actor_;
     }
     static Actor& current() { return *actor_; } // 复用既有对象，不触发析构
-    static void release() { actor_.reset(); }   // C++ 主动 delete 父对象
-    static bool held() { return actor_ != nullptr; }
+    static void   release() { actor_.reset(); } // C++ 主动 delete 父对象
+    static bool   held() { return actor_ != nullptr; }
 };
 
 static auto ActorStateMeta = binding::defClass<Actor::ActorState>("ActorState")
-            .ctor(nullptr)
-            .prop("alive", &Actor::ActorState::alive_)
-            .prop("dead", &Actor::ActorState::dead_)
-            .build();
-static auto ActorMeta = binding::defClass<Actor>("Actor")
-            .ctor<int>()
-            .prop("id", &Actor::id)
-            .prop("state", &Actor::state_, binding::ReturnValuePolicy::kReferenceInternal)
-            .build();
+                                 .ctor(nullptr)
+                                 .prop("alive", &Actor::ActorState::alive_)
+                                 .prop("dead", &Actor::ActorState::dead_)
+                                 .build();
+static auto ActorMeta      = binding::defClass<Actor>("Actor")
+                                 .ctor<int>()
+                                 .prop("id", &Actor::id)
+                                 .prop("state", &Actor::state_, binding::ReturnValuePolicy::kReferenceInternal)
+                                 .build();
 static auto ActorWorldMeta = binding::defClass<void>("ActorWorld")
-            .func("acquire", &ActorWorld::acquire, binding::ReturnValuePolicy::kReference)
-            .func("current", &ActorWorld::current, binding::ReturnValuePolicy::kReference)
-            .func("release", &ActorWorld::release)
-            .func("held", &ActorWorld::held)
-            .build();
+                                 .func("acquire", &ActorWorld::acquire, binding::ReturnValuePolicy::kReference)
+                                 .func("current", &ActorWorld::current, binding::ReturnValuePolicy::kReference)
+                                 .func("release", &ActorWorld::release)
+                                 .func("held", &ActorWorld::held)
+                                 .build();
 
 // 场景 1：脚本持有对象（JS new）- 脚本主动释放
 // 脚本 null 父引用 -> 子仍钉住父；子 null 后 -> 父子恰好各析构一次
@@ -544,7 +537,11 @@ TEST_CASE_METHOD(BugTestFixture, "ReferenceInternal: JS-held object - script rel
 // 场景 2（父对象部分）：C++ 持有对象 - C++ 主动 delete
 // C++ 删除父对象前，先对父包装器执行 invalidate（C++ 侧能做到的最佳配合），
 // 验证父对象访问联动失效：必须抛受控异常，不得 UAF。
-TEST_CASE_METHOD(BugTestFixture, "ReferenceInternal: C++-held object - C++ delete - parent linked invalidation", "[bugs]") {
+TEST_CASE_METHOD(
+    BugTestFixture,
+    "ReferenceInternal: C++-held object - C++ delete - parent linked invalidation",
+    "[bugs]"
+) {
     EngineScope lock{*engine};
     engine->registerClass(ActorMeta);
     engine->registerClass(ActorStateMeta);
@@ -578,7 +575,11 @@ TEST_CASE_METHOD(BugTestFixture, "ReferenceInternal: C++-held object - C++ delet
 // 即使父包装器已 invalidate，子包装器（kReferenceInternal，裸 ActorState*）
 // 与父之间只有“JS 包装器级”的隐藏引用，无任何过期联动 -> 按契约应抛受控异常；
 // 若机制缺失，此处将直接命中 ASan 的 heap-use-after-free。
-TEST_CASE_METHOD(BugTestFixture, "ReferenceInternal: C++-held object - C++ delete - child linked invalidation", "[bugs]") {
+TEST_CASE_METHOD(
+    BugTestFixture,
+    "ReferenceInternal: C++-held object - C++ delete - child linked invalidation",
+    "[bugs]"
+) {
     EngineScope lock{*engine};
     engine->registerClass(ActorMeta);
     engine->registerClass(ActorStateMeta);
@@ -683,6 +684,46 @@ TEST_CASE_METHOD(BugTestFixture, "ReferenceInternal: C++-held object - script re
     ActorWorld::release();
     CHECK(g_actorDeleted == actorBase + 1);
     CHECK(g_stateDeleted == stateBase + 1);
+}
+
+
+TEST_CASE_METHOD(BugTestFixture, "Bug: Local<T>::kind() object-like kinds swallowed by kObject") {
+    EngineScope lock{*engine};
+
+    REQUIRE_NOTHROW(Undefined::newUndefined().asValue().kind() == ValueKind::kUndefined);
+    REQUIRE_NOTHROW(Null::newNull().asValue().kind() == ValueKind::kNull);
+    REQUIRE_NOTHROW(Boolean::newBoolean(true).asValue().kind() == ValueKind::kBoolean);
+    REQUIRE_NOTHROW(Number::newNumber(1.0).asValue().kind() == ValueKind::kNumber);
+    REQUIRE_NOTHROW(BigInt::newBigInt(1).asValue().kind() == ValueKind::kBigInt);
+    REQUIRE_NOTHROW(String::newString("1").asValue().kind() == ValueKind::kString);
+    REQUIRE_NOTHROW(Symbol::newSymbol().asValue().kind() == ValueKind::kSymbol);
+    REQUIRE_NOTHROW(Object::newObject().asValue().kind() == ValueKind::kObject);
+    REQUIRE_NOTHROW(Array::newArray().asValue().kind() == ValueKind::kArray);
+    REQUIRE_NOTHROW(
+        Function::newFunction([](Arguments const&) -> Local<Value> { return {}; }).asValue().kind()
+        == ValueKind::kFunction
+    );
+    REQUIRE_NOTHROW(PromiseResolver::newResolver().promise().asValue().kind() == ValueKind::kPromise);
+    REQUIRE_NOTHROW(Proxy::newProxy(Object::newObject(), Object::newObject()).asValue().kind() == ValueKind::kProxy);
+
+    // interop
+    REQUIRE_NOTHROW(
+        engine->evalScript(String::newString("(function() { return 'a'; })")).kind() == ValueKind::kFunction
+    );
+    ValueKind kind;
+    engine->globalThis().set(
+        String::newString("ensureFn"),
+        Function::newFunction([&kind](Arguments const& args) -> Local<Value> {
+            kind = args[0].kind();
+            return {};
+        })
+    );
+    REQUIRE_NOTHROW(
+        engine->evalScript(
+            String::newString("function aaa() { return 'asd'; }\nensureFn(aaa);")
+        )
+    );
+    REQUIRE(kind == ValueKind::kFunction);
 }
 
 

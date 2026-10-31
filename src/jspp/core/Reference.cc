@@ -25,11 +25,20 @@ ValueKind Local<Value>::kind() const {
     if (isBigInt()) return ValueKind::kBigInt;
     if (isString()) return ValueKind::kString;
     if (isSymbol()) return ValueKind::kSymbol;
-    if (isProxy()) return ValueKind::kProxy; // proxies are recognized before any other object-like kind
-    if (isPromise()) return ValueKind::kPromise;
-    if (isObject()) return ValueKind::kObject;
+
+    //! NOTE: object-like kinds must be resolved before isObject().
+    // isObject() is the broadest object-like check and may return true for
+    // function/array/promise/proxy depending on the engine binding (or on how
+    // the value was passed across the script/host boundary). If any concrete
+    // kind is checked after isObject(), that branch becomes dead code and the
+    // value is misreported as kObject. Keep all specific kinds above, and
+    // leave isObject() last as the fallback for plain objects only.
     if (isArray()) return ValueKind::kArray;
     if (isFunction()) return ValueKind::kFunction;
+    if (isProxy()) return ValueKind::kProxy; // proxies are recognized before any other object-like kind
+    if (isPromise()) return ValueKind::kPromise;
+
+    if (isObject()) return ValueKind::kObject;
     [[unlikely]] throw std::logic_error("Unknown type, did you forget to add if branch?");
 }
 
