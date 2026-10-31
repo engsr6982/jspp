@@ -33,9 +33,9 @@ ValueKind Local<Value>::kind() const {
     // kind is checked after isObject(), that branch becomes dead code and the
     // value is misreported as kObject. Keep all specific kinds above, and
     // leave isObject() last as the fallback for plain objects only.
+    if (isProxy()) return ValueKind::kProxy; // proxies are recognized before any other object-like kind
     if (isArray()) return ValueKind::kArray;
     if (isFunction()) return ValueKind::kFunction;
-    if (isProxy()) return ValueKind::kProxy; // proxies are recognized before any other object-like kind
     if (isPromise()) return ValueKind::kPromise;
 
     if (isObject()) return ValueKind::kObject;
