@@ -238,9 +238,11 @@ namespace factory {
 template <typename T>
 std::unique_ptr<NativeInstance>
 newNativeInstanceImpl(T&& value, ReturnValuePolicy policy, traits::detail::ResolvedCastSource const& resolved) {
-    using BaseT       = std::remove_reference_t<T>;
+    using BaseT = std::remove_reference_t<T>;
 
-    if constexpr (traits::isReferenceOnlyType<std::remove_cv_t<typename traits::detail::ElementTypeExtractor<T>::type>>) {
+    if constexpr (
+        traits::isReferenceOnlyType<std::remove_cv_t<typename traits::detail::ElementTypeExtractor<T>::type>>
+    ) {
         static_assert(
             std::is_pointer_v<BaseT> || std::is_lvalue_reference_v<T>,
             "A reference-only type must be passed by pointer or lvalue reference"
@@ -250,130 +252,133 @@ newNativeInstanceImpl(T&& value, ReturnValuePolicy policy, traits::detail::Resol
             if (!value) return nullptr;
         }
         using Elem = std::remove_cv_t<typename traits::detail::ElementTypeExtractor<T>::type>;
-        return std::make_unique<PointerNativeInstance<Elem, Elem*>>(
-            resolved.meta,
-            static_cast<Elem*>(ptr),
-            ptr
-        );
-    }
- else {
+        return std::make_unique<PointerNativeInstance<Elem, Elem*>>(resolved.meta, static_cast<Elem*>(ptr), ptr);
+    } else {
 
-    using ElementType = typename traits::detail::ElementTypeExtractor<T>::type;
-    // 拷贝/移动创建独立副本：副本不继承源的 const 语义（const 是源对象的属性），
-    // 引用类策略（kReference 系列）仍保留 const。
-    using CopyElementT = std::remove_const_t<ElementType>;
+        using ElementType = typename traits::detail::ElementTypeExtractor<T>::type;
+        // 拷贝/移动创建独立副本：副本不继承源的 const 语义（const 是源对象的属性），
+        // 引用类策略（kReference 系列）仍保留 const。
+        using CopyElementT = std::remove_const_t<ElementType>;
 
-    // Helper creator, automatically deduces Holder type
-    auto createImpl = [&](auto&& holder) {
-        using HolderT      = std::decay_t<decltype(holder)>;
-        using InstElementT = typename std::pointer_traits<HolderT>::element_type;
-        return std::make_unique<PointerNativeInstance<InstElementT, HolderT>>(
-            resolved.meta,
-            std::forward<decltype(holder)>(holder),
-            const_cast<void*>(resolved.ptr)
-        );
-    };
+        // Helper creator, automatically deduces Holder type
+        auto createImpl = [&](auto&& holder) {
+            using HolderT      = std::decay_t<decltype(holder)>;
+            using InstElementT = typename std::pointer_traits<HolderT>::element_type;
+            return std::make_unique<PointerNativeInstance<InstElementT, HolderT>>(
+                resolved.meta,
+                std::forward<decltype(holder)>(holder),
+                const_cast<void*>(resolved.ptr)
+            );
+        };
 
-    // ----------------
-    // smart pointer
-    // ----------------
-    if constexpr (traits::is_unique_ptr_v<BaseT>) {
-        if (policy == ReturnValuePolicy::kCopy) [[unlikely]] {
-            throw std::logic_error("Cannot copy unique_ptr");
-        }
-        return createImpl(std::forward<T>(value));
-
-    } else if constexpr (traits::is_shared_ptr_v<BaseT>) {
-        return createImpl(std::forward<T>(value));
-
-    } else { // raw pointer
-        // Extract raw pointers for constructing Holder
-        ElementType* rawPtr = nullptr;
-        if constexpr (std::is_pointer_v<BaseT>) {
-            rawPtr = value;
-            if (!rawPtr) return nullptr;
-        } else {
-            rawPtr = &value;
-        }
-
-        // Handle the ownership and lifecycle of objects according to the strategy
-        switch (policy) {
-        case ReturnValuePolicy::kCopy:
-            // 拷贝会构造副本并最终析构它, 所以整段按"类型是否可拷贝"做编译期门控:
-            // 不可拷贝的类型不实例化任何需要析构的代码, 只在真正走到这个分支时报错
-            if constexpr (!std::is_copy_constructible_v<CopyElementT>) {
-                [[unlikely]] throw std::logic_error("Object is not copy constructible");
-            } else if (resolved.is_downcasted) {
-                auto copy = resolved.meta->instanceMeta_.copyCloneCtor_;
-                if (!copy) [[unlikely]] {
-                    throw std::logic_error("Polymorphic type '" + resolved.meta->name_ + "' is not copy constructible");
-                }
-                void* cloned = copy(resolved.ptr);
-                // Offset Derived* back to Base* (ElementType*)
-                void* base = resolved.meta->castTo(cloned, typeid(ElementType));
-                if (!base) [[unlikely]] {
-                    if (auto dtor = resolved.meta->instanceMeta_.cloneDestructor_) {
-                        dtor(cloned); // free the cloned object
-                    }
-                    throw std::logic_error("Failed to upcast cloned polymorphic object to base type");
-                }
-                ElementType* finalPtr = static_cast<ElementType*>(base);
-                // cloned 来自 copyCloneCtor（new T，可变），const_cast 安全
-                return createImpl(std::unique_ptr<CopyElementT>(const_cast<CopyElementT*>(finalPtr)));
-            } else if constexpr (isInlineOptimizable_v<CopyElementT>) {
-                return std::make_unique<ValueNativeInstance<CopyElementT>>(resolved.meta, *rawPtr); // SOO
-            } else {
-                return createImpl(std::make_unique<CopyElementT>(*rawPtr));
+        // ----------------
+        // smart pointer
+        // ----------------
+        if constexpr (traits::is_unique_ptr_v<BaseT>) {
+            if (policy == ReturnValuePolicy::kCopy) [[unlikely]] {
+                throw std::logic_error("Cannot copy unique_ptr");
             }
+            return createImpl(std::forward<T>(value));
 
-        case ReturnValuePolicy::kMove:
-            if (resolved.is_downcasted) {
-                auto move = resolved.meta->instanceMeta_.moveCloneCtor_;
-                if (!move) [[unlikely]] {
-                    throw std::logic_error("Polymorphic type '" + resolved.meta->name_ + "' is not move constructible");
-                }
-                void* cloned = move(const_cast<void*>(resolved.ptr));
-                // Offset Derived* back to Base* (ElementType*)
-                void* base = resolved.meta->castTo(cloned, typeid(ElementType));
-                if (!base) [[unlikely]] {
-                    if (auto dtor = resolved.meta->instanceMeta_.cloneDestructor_) {
-                        dtor(cloned); // free the cloned object
-                    }
-                    throw std::logic_error("Failed to upcast cloned polymorphic object to base type");
-                }
-                ElementType* finalPtr = static_cast<ElementType*>(base);
-                return createImpl(std::unique_ptr<CopyElementT>(const_cast<CopyElementT*>(finalPtr)));
-            }
-            // Non-polymorphic type
-            if constexpr (isInlineOptimizable_v<CopyElementT>) {
-                return std::make_unique<ValueNativeInstance<CopyElementT>>(resolved.meta, std::move(*rawPtr)); // SOO
-            } else if constexpr (std::is_move_constructible_v<CopyElementT>) {
-                return createImpl(std::make_unique<CopyElementT>(std::move(*rawPtr)));
-            } else {
-                [[unlikely]] throw std::logic_error("Object is not move constructible");
-            }
+        } else if constexpr (traits::is_shared_ptr_v<BaseT>) {
+            return createImpl(std::forward<T>(value));
 
-        case ReturnValuePolicy::kTakeOwnership:
+        } else { // raw pointer
+            // Extract raw pointers for constructing Holder
+            ElementType* rawPtr = nullptr;
             if constexpr (std::is_pointer_v<BaseT>) {
-                return createImpl(std::unique_ptr<ElementType>(value));
+                rawPtr = value;
+                if (!rawPtr) return nullptr;
             } else {
-                [[unlikely]] throw std::logic_error("Cannot take ownership of non-pointer");
+                rawPtr = &value;
             }
 
-        case ReturnValuePolicy::kReference:
-        case ReturnValuePolicy::kReferenceInternal:
-        case ReturnValuePolicy::kReferencePersistent:
-        case ReturnValuePolicy::kReferenceInternalPersistent: {
-            // 瞬态作用域跟踪在 TypeConverter::toJs 中进行（需要 wrapper 引用以保活，
-            // 并需要 parent 信息以判定"从瞬态根可达"）
-            return createImpl(rawPtr);
-        }
+            // Handle the ownership and lifecycle of objects according to the strategy
+            switch (policy) {
+            case ReturnValuePolicy::kCopy:
+                // 拷贝会构造副本并最终析构它, 所以整段按"类型是否可拷贝"做编译期门控:
+                // 不可拷贝的类型不实例化任何需要析构的代码, 只在真正走到这个分支时报错
+                if constexpr (!std::is_copy_constructible_v<CopyElementT>) {
+                    [[unlikely]] throw std::logic_error("Object is not copy constructible");
+                } else if (resolved.is_downcasted) {
+                    auto copy = resolved.meta->instanceMeta_.copyCloneCtor_;
+                    if (!copy) [[unlikely]] {
+                        throw std::logic_error(
+                            "Polymorphic type '" + resolved.meta->name_ + "' is not copy constructible"
+                        );
+                    }
+                    void* cloned = copy(resolved.ptr);
+                    // Offset Derived* back to Base* (ElementType*)
+                    void* base = resolved.meta->castTo(cloned, typeid(ElementType));
+                    if (!base) [[unlikely]] {
+                        if (auto dtor = resolved.meta->instanceMeta_.cloneDestructor_) {
+                            dtor(cloned); // free the cloned object
+                        }
+                        throw std::logic_error("Failed to upcast cloned polymorphic object to base type");
+                    }
+                    ElementType* finalPtr = static_cast<ElementType*>(base);
+                    // cloned 来自 copyCloneCtor（new T，可变），const_cast 安全
+                    return createImpl(std::unique_ptr<CopyElementT>(const_cast<CopyElementT*>(finalPtr)));
+                } else if constexpr (isInlineOptimizable_v<CopyElementT>) {
+                    return std::make_unique<ValueNativeInstance<CopyElementT>>(resolved.meta, *rawPtr); // SOO
+                } else {
+                    return createImpl(std::make_unique<CopyElementT>(*rawPtr));
+                }
 
-        default:
-            [[unlikely]] throw std::logic_error("Unknown return value policy");
+            case ReturnValuePolicy::kMove:
+                if (resolved.is_downcasted) {
+                    auto move = resolved.meta->instanceMeta_.moveCloneCtor_;
+                    if (!move) [[unlikely]] {
+                        throw std::logic_error(
+                            "Polymorphic type '" + resolved.meta->name_ + "' is not move constructible"
+                        );
+                    }
+                    void* cloned = move(const_cast<void*>(resolved.ptr));
+                    // Offset Derived* back to Base* (ElementType*)
+                    void* base = resolved.meta->castTo(cloned, typeid(ElementType));
+                    if (!base) [[unlikely]] {
+                        if (auto dtor = resolved.meta->instanceMeta_.cloneDestructor_) {
+                            dtor(cloned); // free the cloned object
+                        }
+                        throw std::logic_error("Failed to upcast cloned polymorphic object to base type");
+                    }
+                    ElementType* finalPtr = static_cast<ElementType*>(base);
+                    return createImpl(std::unique_ptr<CopyElementT>(const_cast<CopyElementT*>(finalPtr)));
+                }
+                // Non-polymorphic type
+                if constexpr (isInlineOptimizable_v<CopyElementT>) {
+                    return std::make_unique<ValueNativeInstance<CopyElementT>>(
+                        resolved.meta,
+                        std::move(*rawPtr)
+                    ); // SOO
+                } else if constexpr (std::is_move_constructible_v<CopyElementT>) {
+                    return createImpl(std::make_unique<CopyElementT>(std::move(*rawPtr)));
+                } else {
+                    [[unlikely]] throw std::logic_error("Object is not move constructible");
+                }
+
+            case ReturnValuePolicy::kTakeOwnership:
+                if constexpr (std::is_pointer_v<BaseT>) {
+                    return createImpl(std::unique_ptr<ElementType>(value));
+                } else {
+                    [[unlikely]] throw std::logic_error("Cannot take ownership of non-pointer");
+                }
+
+            case ReturnValuePolicy::kReference:
+            case ReturnValuePolicy::kReferenceInternal:
+            case ReturnValuePolicy::kReferencePersistent:
+            case ReturnValuePolicy::kReferenceInternalPersistent: {
+                // 瞬态作用域跟踪在 TypeConverter::toJs 中进行（需要 wrapper 引用以保活，
+                // 并需要 parent 信息以判定"从瞬态根可达"）
+                return createImpl(rawPtr);
+            }
+
+            default:
+                [[unlikely]] throw std::logic_error("Unknown return value policy");
+            }
         }
     }
-    }}
+}
 
 } // namespace factory
 
