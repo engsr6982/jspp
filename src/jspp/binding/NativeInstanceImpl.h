@@ -230,6 +230,25 @@ struct ElementTypeExtractor<U> {
 
 namespace factory {
 
+namespace {
+
+template <typename T>
+consteval void assert_enable_shared_from_this() {
+    using trait = traits::EnableSharedFromThisTraits<T>;
+    if constexpr (trait::declares_esft) {
+        static_assert(
+            trait::esft_reachable,
+            "T inherits enable_shared_from_this but the base is not publicly "
+            "reachable (private/protected inheritance, ambiguous base, etc.). "
+            "The standard library cannot initialize weak_this; "
+            "shared_from_this() will throw bad_weak_ptr across the engine "
+            "boundary. Make the inheritance public and unambiguous, or drop "
+            "enable_shared_from_this."
+        );
+    }
+}
+
+} // namespace
 
 /**
  * @brief Generate the underlying NativeInstance instance based on the given
@@ -278,9 +297,18 @@ newNativeInstanceImpl(T&& value, ReturnValuePolicy policy, traits::detail::Resol
             if (policy == ReturnValuePolicy::kCopy) [[unlikely]] {
                 throw std::logic_error("Cannot copy unique_ptr");
             }
+            if (!value) {
+                return nullptr; // unique_ptr is null
+            }
+            using trait = traits::EnableSharedFromThisTraits<ElementType>;
+            static_assert(!trait::declares_esft, "unique_ptr cannot be used with enable_shared_from_this");
             return createImpl(std::forward<T>(value));
 
         } else if constexpr (traits::is_shared_ptr_v<BaseT>) {
+            if (!value) {
+                return nullptr; // shared_ptr is null
+            }
+            assert_enable_shared_from_this<ElementType>();
             return createImpl(std::forward<T>(value));
 
         } else { // raw pointer
@@ -412,15 +440,21 @@ struct NativeInstanceFactory : detail::NativeInstanceFactoryBase<T> {};
 
 namespace factory {
 
-template <typename T>
-std::unique_ptr<NativeInstance> newNativeInstanceFrom(std::unique_ptr<T>&& inst) {
-    if constexpr (std::is_base_of_v<NativeInstance, T>) {
-        return std::move(inst);
+template <typename Holder>
+std::unique_ptr<NativeInstance> newNativeInstanceFrom(Holder&& inst) {
+    static_assert(
+        traits::is_unique_ptr_v<Holder> || traits::is_shared_ptr_v<Holder>,
+        "Holder must be a unique_ptr or shared_ptr to a NativeInstance subclass"
+    );
+
+    if constexpr (std::is_base_of_v<NativeInstance, Holder>) {
+        static_assert(traits::is_unique_ptr_v<Holder>, "Holder must be a unique_ptr to a NativeInstance subclass");
+        return std::forward<Holder>(inst);
     } else {
         auto resolve = traits::detail::resolveCastSource(inst.get());
         // For smart pointers, the ReturnValuePolicy here has no actual effect.
-        return traits::NativeInstanceFactory<traits::RawType_t<T>>::create(
-            std::move(inst),
+        return traits::NativeInstanceFactory<traits::RawType_t<Holder>>::create(
+            std::forward<Holder>(inst),
             ReturnValuePolicy::kAutomatic,
             resolve
         );
@@ -435,11 +469,18 @@ std::unique_ptr<NativeInstance> newNativeInstanceFor(Args&&... args)
         !std::is_base_of_v<NativeInstance, T>,
         "T is the value type to wrap; use newNativeInstanceFrom for NativeInstance subclasses"
     );
-    if constexpr (isInlineOptimizable_v<T>) {
+
+    assert_enable_shared_from_this<T>();
+
+    using trait = traits::EnableSharedFromThisTraits<T>;
+    if constexpr (isInlineOptimizable_v<T> && !trait::declares_esft) {
         // SOO: 小值类型在 ValueNativeInstance 里就地构造, 不经过工厂定制点
         T*   unused  = nullptr;
         auto resolve = traits::detail::resolveCastSource<T>(unused);
         return std::make_unique<ValueNativeInstance<T>>(resolve.meta, std::forward<Args>(args)...);
+    } else if constexpr (trait::declares_esft) {
+        auto inst = std::make_shared<T>(std::forward<Args>(args)...);
+        return newNativeInstanceFrom(std::move(inst));
     } else {
         auto inst = std::make_unique<T>(std::forward<Args>(args)...);
         return newNativeInstanceFrom(std::move(inst));

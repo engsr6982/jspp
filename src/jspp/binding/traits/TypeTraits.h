@@ -141,4 +141,20 @@ struct EnumTraits {
     using script_type = std::conditional_t<is_bool, Boolean, std::conditional_t<is_big, BigInt, Number>>;
 };
 
+template <typename T>
+struct EnableSharedFromThisTraits {
+    // Whether T declares enable_shared_from_this<T> CRTP-style.
+    // True for public, protected, private, and ambiguous inheritance.
+    static constexpr bool declares_esft = std::is_base_of_v<std::enable_shared_from_this<T>, T>;
+
+    // Whether T* can be converted to enable_shared_from_this<T>*
+    // unambiguously and with accessible inheritance.
+    // Note: esft_reachable implies declares_esft; both are kept for diagnostics.
+    static constexpr bool esft_reachable = std::is_convertible_v<T*, std::enable_shared_from_this<T>*>;
+
+    // Type-level well-formedness. Necessary but not sufficient:
+    // the object must still be owned by a shared_ptr at runtime.
+    static constexpr bool esft_wellformed = declares_esft && esft_reachable;
+};
+
 } // namespace jspp::binding::traits

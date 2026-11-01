@@ -718,12 +718,34 @@ TEST_CASE_METHOD(BugTestFixture, "Bug: Local<T>::kind() object-like kinds swallo
             return {};
         })
     );
-    REQUIRE_NOTHROW(
-        engine->evalScript(
-            String::newString("function aaa() { return 'asd'; }\nensureFn(aaa);")
-        )
-    );
+    REQUIRE_NOTHROW(engine->evalScript(String::newString("function aaa() { return 'asd'; }\nensureFn(aaa);")));
     REQUIRE(kind == ValueKind::kFunction);
+}
+
+
+class PublicSharedFromThis : public std::enable_shared_from_this<PublicSharedFromThis> {
+public:
+    std::shared_ptr<PublicSharedFromThis> clone() {
+        return this->shared_from_this(); // OK
+    }
+};
+auto const kPublicSharedFromThis =
+    binding::defClass<PublicSharedFromThis>("PublicSharedFromThis").ctor(nullptr).build();
+TEST_CASE_METHOD(
+    BugTestFixture,
+    "Regression: enable_shared_from_this type is wrapped as shared_ptr, not unique_ptr",
+    "[bugs]"
+) {
+    EngineScope lock{*engine};
+
+    engine->registerClass(kPublicSharedFromThis);
+
+    { // Normal inheritance
+        auto p1  = binding::factory::newNativeInstanceFor<PublicSharedFromThis>();
+        auto p1s = p1->get_shared_ptr();
+        REQUIRE(p1s != nullptr);
+        REQUIRE_NOTHROW(std::static_pointer_cast<PublicSharedFromThis>(p1s)->clone() != nullptr);
+    }
 }
 
 
