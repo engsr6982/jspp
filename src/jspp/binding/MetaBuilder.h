@@ -44,8 +44,7 @@ class ClassMetaBuilder {
     std::vector<InstanceMemberMeta::Method>   instanceFunctions_;
     ClassMeta const*                          base_ = nullptr;
 
-    ConstructorCallback              userDefinedConstructor_ = nullptr;
-    std::vector<ConstructorCallback> constructors_           = {};
+    std::vector<ConstructorCallback> constructors_ = {};
 
     ClassMeta::UpcasterCallback                                      upcaster_ = nullptr;
     std::unordered_map<std::type_index, ClassMeta::UpcasterCallback> extraCasters_;
@@ -79,7 +78,6 @@ class ClassMetaBuilder {
       instanceProperty_(std::move(other.instanceProperty_)),
       instanceFunctions_(std::move(other.instanceFunctions_)),
       base_(other.base_),
-      userDefinedConstructor_(std::move(other.userDefinedConstructor_)),
       constructors_(std::move(other.constructors_)),
       upcaster_(other.upcaster_),
       extraCasters_(std::move(other.extraCasters_)),
@@ -291,7 +289,7 @@ public:
     auto ctor(std::nullptr_t)
         requires(isInstanceClass && K == ConstructorKind::kNone)
     {
-        userDefinedConstructor_ = [](Arguments const&) { return nullptr; };
+        constructors_.emplace_back([](Arguments const&) { return nullptr; });
         ClassMetaBuilder<T, ConstructorKind::kDisabled> builder{std::move(*this)};
         return builder; // NRVO/move
     }
@@ -299,7 +297,7 @@ public:
     auto ctor(ConstructorCallback fn)
         requires(isInstanceClass && K == ConstructorKind::kNone)
     {
-        userDefinedConstructor_ = std::move(fn);
+        constructors_.emplace_back(std::move(fn));
         ClassMetaBuilder<T, ConstructorKind::kCustom> builder{std::move(*this)};
         return builder; // NRVO/move
     }
@@ -460,28 +458,24 @@ public:
         ConstructorCallback constructorCallback = nullptr;
         if constexpr (isInstanceClass) {
             static_assert(K != ConstructorKind::kNone, "No constructor provided");
-            if constexpr (K == ConstructorKind::kCustom || K == ConstructorKind::kDisabled) {
-                constructorCallback = std::move(userDefinedConstructor_);
-            } else { // Normal
-                if (constructors_.empty()) {
-                    throw std::invalid_argument("No constructor provided");
-                }
-                if (constructors_.size() == 1) {
-                    // 没有重载构造函数，直接传递，避免无意义的尝试
-                    constructorCallback = std::move(constructors_.front());
-                } else {
-                    constructorCallback =
-                        [fn = std::move(constructors_)](Arguments const& arguments) -> std::unique_ptr<NativeInstance> {
-                        for (auto const& f : fn) {
-                            try {
-                                if (auto holder = std::invoke(f, arguments)) {
-                                    return std::move(holder);
-                                }
-                            } catch (Exception const&) {}
-                        }
-                        return nullptr;
-                    };
-                }
+            if (constructors_.empty()) {
+                throw std::invalid_argument("No constructor provided");
+            }
+            if (constructors_.size() == 1) {
+                // 没有重载构造函数，直接传递，避免无意义的尝试
+                constructorCallback = std::move(constructors_.front());
+            } else {
+                constructorCallback =
+                    [fn = std::move(constructors_)](Arguments const& arguments) -> std::unique_ptr<NativeInstance> {
+                    for (auto const& f : fn) {
+                        try {
+                            if (auto holder = std::invoke(f, arguments)) {
+                                return std::move(holder);
+                            }
+                        } catch (Exception const&) {}
+                    }
+                    return nullptr;
+                };
             }
         }
 
