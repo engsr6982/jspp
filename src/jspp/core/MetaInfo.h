@@ -72,7 +72,7 @@ struct InstanceMemberMeta {
 
     // After copying or moving cloned resources, if subsequent operations fail,
     //  the cloned pointer needs to be released to avoid memory leaks.
-    // For example: polymorphic casting fails when `createNativeInstance`
+    // For example: polymorphic casting fails when `newNativeInstanceImpl`
     //  internally handles Copy and Move strategies
     using CloneDestructor = void (*)(void* ptr);
     CloneDestructor const cloneDestructor_{nullptr};

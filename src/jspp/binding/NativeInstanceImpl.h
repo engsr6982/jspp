@@ -237,7 +237,7 @@ namespace factory {
  */
 template <typename T>
 std::unique_ptr<NativeInstance>
-createNativeInstance(T&& value, ReturnValuePolicy policy, traits::detail::ResolvedCastSource const& resolved) {
+newNativeInstanceImpl(T&& value, ReturnValuePolicy policy, traits::detail::ResolvedCastSource const& resolved) {
     using BaseT       = std::remove_reference_t<T>;
 
     if constexpr (traits::isReferenceOnlyType<std::remove_cv_t<typename traits::detail::ElementTypeExtractor<T>::type>>) {
@@ -388,7 +388,7 @@ struct NativeInstanceFactoryBase {
     template <typename V>
     static std::unique_ptr<NativeInstance>
     create(V&& value, ReturnValuePolicy policy, ResolvedCastSource const& resolved) {
-        return factory::createNativeInstance(std::forward<V>(value), policy, resolved);
+        return factory::newNativeInstanceImpl(std::forward<V>(value), policy, resolved);
     }
 };
 
@@ -408,8 +408,7 @@ struct NativeInstanceFactory : detail::NativeInstanceFactoryBase<T> {};
 namespace factory {
 
 template <typename T>
-std::unique_ptr<NativeInstance> wrapNativeInstance(std::unique_ptr<T>&& inst) {
-    // 已经是承载实例, 直接转交
+std::unique_ptr<NativeInstance> newNativeInstanceFrom(std::unique_ptr<T>&& inst) {
     if constexpr (std::is_base_of_v<NativeInstance, T>) {
         return std::move(inst);
     } else {
@@ -424,12 +423,12 @@ std::unique_ptr<NativeInstance> wrapNativeInstance(std::unique_ptr<T>&& inst) {
 }
 
 template <typename T, typename... Args>
-std::unique_ptr<NativeInstance> newNativeInstance(Args&&... args)
+std::unique_ptr<NativeInstance> newNativeInstanceFor(Args&&... args)
     requires std::constructible_from<T, Args...> && (!std::is_base_of_v<NativeInstance, T>)
 {
     static_assert(
         !std::is_base_of_v<NativeInstance, T>,
-        "T is the value type to wrap; use wrapNativeInstance for NativeInstance subclasses"
+        "T is the value type to wrap; use newNativeInstanceFrom for NativeInstance subclasses"
     );
     if constexpr (isInlineOptimizable_v<T>) {
         // SOO: 小值类型在 ValueNativeInstance 里就地构造, 不经过工厂定制点
@@ -438,7 +437,7 @@ std::unique_ptr<NativeInstance> newNativeInstance(Args&&... args)
         return std::make_unique<ValueNativeInstance<T>>(resolve.meta, std::forward<Args>(args)...);
     } else {
         auto inst = std::make_unique<T>(std::forward<Args>(args)...);
-        return wrapNativeInstance(std::move(inst));
+        return newNativeInstanceFrom(std::move(inst));
     }
 }
 

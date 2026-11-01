@@ -333,12 +333,12 @@ auto CustomCtorTestMeta = defClass<SimpleClass>("CustomCtorSimpleClass")
                               .ctor([](Arguments const& arguments) -> std::unique_ptr<NativeInstance> {
                                   if (arguments.length() == 1) {
                                       auto str = arguments[0].asString();
-                                      return factory::newNativeInstance<SimpleClass>(str.getValue());
+                                      return factory::newNativeInstanceFor<SimpleClass>(str.getValue());
                                   }
                                   if (arguments.length() == 2) {
                                       auto id  = arguments[0].asNumber().getInt32();
                                       auto str = arguments[1].asString();
-                                      return factory::newNativeInstance<SimpleClass>(id, str.getValue());
+                                      return factory::newNativeInstanceFor<SimpleClass>(id, str.getValue());
                                   }
                                   return nullptr;
                               })
@@ -977,7 +977,7 @@ TEST_CASE_METHOD(BindingTestFixture, "Custom NativeInstance storage") {
     engine->globalThis().set(
         String::newString("makeRaw"),
         Function::newFunction(binding::cpp_func([]() -> std::unique_ptr<NativeInstance> {
-            return jspp::binding::factory::newNativeInstance<Bag>(Bag{7});
+            return jspp::binding::factory::newNativeInstanceFor<Bag>(Bag{7});
         }))
     );
 

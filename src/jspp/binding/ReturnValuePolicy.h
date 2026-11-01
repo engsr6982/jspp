@@ -10,7 +10,7 @@ namespace jspp::binding {
 enum class ReturnValuePolicy : uint8_t {
     /**
      * 按返回值形态推导：
-     * - std::unique_ptr：取走所有权（kAutomatic 交给 createNativeInstance 的智能指针分支处理）
+     * - std::unique_ptr：取走所有权（kAutomatic 交给 newNativeInstanceImpl 的智能指针分支处理）
      * - std::shared_ptr：引用计数 +1（同上）
      * - 裸指针：kReference（不接管所有权）
      * - 右值引用：kMove
@@ -93,7 +93,7 @@ constexpr ReturnValuePolicy resolveAutomaticPolicy(ReturnValuePolicy policy) {
     if (policy == ReturnValuePolicy::kAutomatic) {
         using Raw = std::remove_cvref_t<T>;
         if constexpr (traits::is_unique_ptr_v<Raw> || traits::is_shared_ptr_v<Raw>) {
-            // 智能指针保持 kAutomatic: 由 createNativeInstance 的智能指针分支处理所有权
+            // 智能指针保持 kAutomatic: 由 newNativeInstanceImpl 的智能指针分支处理所有权
             // (unique_ptr 取走, shared_ptr 引用计数 +1)
             return ReturnValuePolicy::kAutomatic;
         } else if constexpr (std::is_pointer_v<Raw>) {

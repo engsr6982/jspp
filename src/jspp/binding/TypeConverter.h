@@ -1057,7 +1057,7 @@ ConstructorCallback wrapConstructor() {
                 "Class C must have a no-argument constructor; otherwise, a constructor must be specified."
             );
             if (args.length() != 0) return nullptr; // Parameter mismatch
-            return factory::newNativeInstance<C>();
+            return factory::newNativeInstanceFor<C>();
 
         } else {
             if (args.length() != N) return nullptr; // Parameter mismatch
@@ -1067,7 +1067,7 @@ ConstructorCallback wrapConstructor() {
             auto parameters = ConvertArgsToTuple<Tuple>(args, std::make_index_sequence<N>());
             return std::apply(
                 [](auto&&... unpackedArgs) {
-                    return factory::newNativeInstance<C>(std::forward<decltype(unpackedArgs)>(unpackedArgs)...);
+                    return factory::newNativeInstanceFor<C>(std::forward<decltype(unpackedArgs)>(unpackedArgs)...);
                 },
                 std::move(parameters)
             );

@@ -243,7 +243,7 @@ TEST_CASE_METHOD(NativeInteropFixture, "NativeInterop: normal instance paths and
     REQUIRE(evalInt(*engine, "globalThis.r12") == 5);
 
     // C++-side construction through Engine::newInstance()
-    auto cppObj = engine->newInstance(kRxBaseMeta, jspp::binding::factory::newNativeInstance<RxBase>());
+    auto cppObj = engine->newInstance(kRxBaseMeta, jspp::binding::factory::newNativeInstanceFor<RxBase>());
     REQUIRE(cppObj.get(String::newString("value")).asNumber().getInt32() == 5);
 
     // Prototype-chain forgery: instanceof passes, but no payload exists.
@@ -583,7 +583,7 @@ TEST_CASE_METHOD(NativeInteropFixture, "NativeInterop: constructor paths and fai
     // instance through the transfer holder; failure would leak, ASAN checks)
     auto before = RxBase::s_constructed;
     {
-        auto obj = engine->newInstance(kRxBaseMeta, jspp::binding::factory::newNativeInstance<RxBase>());
+        auto obj = engine->newInstance(kRxBaseMeta, jspp::binding::factory::newNativeInstanceFor<RxBase>());
         REQUIRE(obj.get(String::newString("value")).asNumber().getInt32() == 5);
     }
     REQUIRE(RxBase::s_constructed == before + 1);
@@ -613,7 +613,7 @@ TEST_CASE_METHOD(NativeInteropFixture, "NativeInterop: lifecycle under GC") {
         String::newString("makeRxBase"),
         Function::newFunction(binding::cpp_func([]() -> Local<Object> {
             auto& engine = EngineScope::currentEngineChecked();
-            return engine.newInstance(kRxBaseMeta, binding::factory::newNativeInstance<RxBase>());
+            return engine.newInstance(kRxBaseMeta, binding::factory::newNativeInstanceFor<RxBase>());
         }))
     );
 
