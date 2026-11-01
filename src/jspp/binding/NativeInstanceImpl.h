@@ -425,11 +425,13 @@ std::unique_ptr<NativeInstance> wrapNativeInstance(std::unique_ptr<T>&& inst) {
 
 template <typename T, typename... Args>
 std::unique_ptr<NativeInstance> newNativeInstance(Args&&... args)
-    requires std::constructible_from<T, Args...>
+    requires std::constructible_from<T, Args...> && (!std::is_base_of_v<NativeInstance, T>)
 {
-    if constexpr (std::is_base_of_v<NativeInstance, T>) {
-        return std::make_unique<T>(std::forward<Args>(args)...);
-    } else if constexpr (isInlineOptimizable_v<T>) {
+    static_assert(
+        !std::is_base_of_v<NativeInstance, T>,
+        "T is the value type to wrap; use wrapNativeInstance for NativeInstance subclasses"
+    );
+    if constexpr (isInlineOptimizable_v<T>) {
         // SOO: 小值类型在 ValueNativeInstance 里就地构造, 不经过工厂定制点
         T*   unused  = nullptr;
         auto resolve = traits::detail::resolveCastSource<T>(unused);
