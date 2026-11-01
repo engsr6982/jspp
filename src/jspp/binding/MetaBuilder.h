@@ -320,6 +320,22 @@ public:
         }
     }
 
+    template <typename F>
+    decltype(auto) ctor(F&& fn)
+        requires(
+            isInstanceClass && (K == ConstructorKind::kNone || K == ConstructorKind::kNormal) && traits::Callable<F>
+        )
+    {
+        constructors_.emplace_back(adapter::wrapConstructorFactory(std::forward<F>(fn)));
+
+        if constexpr (K == ConstructorKind::kNormal) {
+            return *this;
+        } else {
+            ClassMetaBuilder<T, ConstructorKind::kNormal> builder{std::move(*this)};
+            return builder; // NRVO/move
+        }
+    }
+
     /**
      * @brief 显式单继承绑定 (C++ -> JS)
      * @note 1. 会在 JavaScript 侧建立真实的 prototype 原型链关系 (类似 JS 中的 class A extends B)。

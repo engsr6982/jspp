@@ -1075,6 +1075,31 @@ ConstructorCallback wrapConstructor() {
     };
 }
 
+template <typename F>
+ConstructorCallback wrapConstructorFactory(F&& factory) {
+    if constexpr (traits::isConstructorCallback_v<F>) {
+        return std::forward<F>(factory);
+    } else {
+        return [fn = std::forward<F>(factory)](Arguments const& args) -> std::unique_ptr<NativeInstance> {
+            using Trait = traits::FunctionTraits<std::decay_t<F>>;
+            using Tuple = typename Trait::ArgsTuple;
+            using R     = typename Trait::ReturnType;
+
+            constexpr auto count = Trait::ArgsCount;
+
+            static_assert(
+                traits::is_unique_ptr_v<R> || traits::is_shared_ptr_v<R>,
+                "Constructor factory must return a std::unique_ptr<T> or std::shared_ptr<T>"
+            );
+
+            if (args.length() != count) return nullptr; // Parameter mismatch
+
+            decltype(auto) inst = std::apply(fn, ConvertArgsToTuple<Tuple>(args, std::make_index_sequence<count>()));
+            return factory::newNativeInstanceFrom(std::move(inst));
+        };
+    }
+}
+
 template <typename C, typename Fn>
 InstanceMethodCallback wrapInstanceMethod(Fn&& fn, ReturnValuePolicy policy) {
     if constexpr (traits::isInstanceMethodCallback_v<Fn>) {

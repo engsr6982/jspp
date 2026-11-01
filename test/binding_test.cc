@@ -721,8 +721,6 @@ TEST_CASE_METHOD(BindingTestFixture, "Abstract class / Interface binding") {
 }
 
 
-
-
 // ==============================================================================
 // 多态类绑定 & 多继承绑定
 // ==============================================================================
@@ -882,11 +880,11 @@ public:
 };
 auto BootstrapMeta = defClass<Bootstrap>("Bootstrap").ctor<>().prop_readonly("pass", &Bootstrap::pass).build();
 auto JSPluginMeta  = defClass<JSPlugin>("Plugin")
-                        .ctor()
-                        .implements<Plugin>()
-                        .method("onLoad", &JSPlugin::onLoad)
-                        .method("onUnload", &JSPlugin::onUnload)
-                        .build();
+                         .ctor()
+                         .implements<Plugin>()
+                         .method("onLoad", &JSPlugin::onLoad)
+                         .method("onUnload", &JSPlugin::onUnload)
+                         .build();
 TEST_CASE_METHOD(BindingTestFixture, "enable_trampoline") {
     EngineScope scope{engine.get()};
 
@@ -938,7 +936,7 @@ struct Bag {
     int value;
 };
 
-// 自定义存储：不拥有对象，只存一个自己维护的存活标志（模拟 MC 的弱引用存储）
+// 自定义存储：不拥有对象，只存一个自己维护的存活标志
 class WeakBagInstance final : public jspp::NativeInstance {
     Bag  bag_;
     bool alive_{true};
@@ -1010,5 +1008,29 @@ TEST_CASE_METHOD(BindingTestFixture, "Custom NativeInstance storage") {
         Catch::Matchers::MessageMatches(Catch::Matchers::ContainsSubstring("Accessing destroyed instance"))
     );
 }
+
+
+class ClassWithFactory {
+public:
+    int value;
+
+    ClassWithFactory(int value) : value(value) {}
+
+    static std::unique_ptr<ClassWithFactory> create1(int value) { return std::make_unique<ClassWithFactory>(value); }
+};
+auto const ClassWithFactoryMeta = jspp::binding::defClass<ClassWithFactory>("ClassWithFactory")
+                                      .ctor(ClassWithFactory::create1)
+                                      .prop("value", &ClassWithFactory::value)
+                                      .build();
+TEST_CASE_METHOD(BindingTestFixture, "class constructor with factory") {
+    EngineScope lock{engine.get()};
+
+    engine->registerClass(ClassWithFactoryMeta);
+
+    REQUIRE_EVAL("new ClassWithFactory(1).value === 1", "ok")
+
+    REQUIRE_THROWS(engine->evalScript(String::newString("new ClassWithFactory(1, 2,3,4)")));
+}
+
 
 } // namespace ut
